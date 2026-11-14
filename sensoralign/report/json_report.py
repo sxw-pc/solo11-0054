@@ -14,6 +14,7 @@ from typing import Any
 from .. import SCHEMA_VERSION
 from ..core.align import AlignResult
 from ..core.offset import OffsetEstimate
+from ..core.quality import GroupRollup, PairCellCounts, PairwiseMatrix
 
 
 def build_report(result: AlignResult) -> dict[str, Any]:
@@ -86,6 +87,9 @@ def build_report(result: AlignResult) -> dict[str, Any]:
             "common_cells": alignment.common_cells,
             "missing_any_cells": alignment.missing_any_cells,
             "completion_rate": alignment.completion_rate,
+            "matrix": _matrix_dict(result.matrix),
+            "device_groups": _rollup_list(result.matrix.device_rollups),
+            "metric_groups": _rollup_list(result.matrix.metric_rollups),
         },
         "offsets": [
             {"device_id": estimate.device_id, **_clock_dict(estimate)}
@@ -111,6 +115,49 @@ def run_id_for(contract_sha256: str, result_sha256: str) -> str:
     """Derive a deterministic run identifier from contract and result hashes."""
     payload = f"{contract_sha256}:{result_sha256}".encode()
     return "run-" + hashlib.sha256(payload).hexdigest()[:20]
+
+
+def _matrix_dict(matrix: PairwiseMatrix) -> dict[str, Any]:
+    groups = [
+        {"device_id": group.device_id, "metric": group.metric}
+        for group in matrix.groups
+    ]
+    pairs = [
+        [_pair_dict(pair) for pair in row]
+        for row in matrix.pairs
+    ]
+    return {
+        "total_cells": matrix.total_cells,
+        "groups": groups,
+        "pairs": pairs,
+    }
+
+
+def _pair_dict(pair: PairCellCounts) -> dict[str, Any]:
+    return {
+        "total_cells": pair.total_cells,
+        "common_cells": pair.common_cells,
+        "missing_any_cells": pair.missing_any_cells,
+        "left_only_missing_cells": pair.left_only_missing_cells,
+        "right_only_missing_cells": pair.right_only_missing_cells,
+        "both_missing_cells": pair.both_missing_cells,
+    }
+
+
+def _rollup_list(rollups: tuple[GroupRollup, ...]) -> list[dict[str, Any]]:
+    return [
+        {
+            "key": rollup.key,
+            "series_count": rollup.series_count,
+            "valid_cells": rollup.valid_cells,
+            "common_with_all_cells": rollup.common_with_all_cells,
+            "missing_any_cells": rollup.missing_any_cells,
+            "group_missing_only_cells": rollup.group_missing_only_cells,
+            "others_missing_only_cells": rollup.others_missing_only_cells,
+            "both_missing_cells": rollup.both_missing_cells,
+        }
+        for rollup in rollups
+    ]
 
 
 def _clock_dict(estimate: OffsetEstimate) -> dict[str, Any]:

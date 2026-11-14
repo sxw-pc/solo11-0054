@@ -17,8 +17,11 @@ from .errors import DataError, Event
 from .offset import OffsetEstimate, correct_points, estimate_offsets, load_anchors
 from .quality import (
     AlignmentQuality,
+    GroupKey,
+    PairwiseMatrix,
     SeriesQuality,
     compute_alignment_quality,
+    compute_pairwise_matrix,
     compute_series_quality,
 )
 from .resample import Sample, resample_points
@@ -74,6 +77,7 @@ class AlignResult:
     grid: GridInfo
     runs: list[SeriesRun]
     alignment: AlignmentQuality
+    matrix: PairwiseMatrix
     offsets: tuple[OffsetEstimate, ...]
     events: list[Event]
 
@@ -169,11 +173,14 @@ def align_contract(contract: Contract) -> AlignResult:
         runs.append(SeriesRun(spec, series, sanitized, corrected, gaps, estimate, strategy, samples, quality))
     events.extend(gaps_for_events)
     alignment = compute_alignment_quality([run.samples for run in runs], grid.cell_count)
+    labels = [GroupKey(run.series.device_id, run.series.metric) for run in runs]
+    matrix = compute_pairwise_matrix([run.samples for run in runs], labels, grid.cell_count)
     return AlignResult(
         contract=contract,
         grid=grid,
         runs=runs,
         alignment=alignment,
+        matrix=matrix,
         offsets=tuple(estimates.values()),
         events=events,
     )

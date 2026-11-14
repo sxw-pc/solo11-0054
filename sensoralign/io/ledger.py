@@ -250,6 +250,15 @@ def _metric_rows(run_id: str, report: dict[str, Any]) -> Iterable[tuple[Any, ...
     yield (run_id, "grid", "", "mode", None, grid["mode"])
     for key in ("total_cells", "common_cells", "missing_any_cells", "completion_rate"):
         yield (run_id, "alignment", "", key, float(alignment[key]), None)
+    for key in ("matrix", "device_groups", "metric_groups"):
+        yield (
+            run_id,
+            "alignment",
+            "",
+            key,
+            None,
+            json.dumps(alignment[key], ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+        )
     for item in report["series"]:
         quality = item["quality"]
         for key in ("total_cells", "value_cells", "coverage", "gap_cells", "gap_ratio", "conflict_count", "gap_count", "gap_duration_us"):

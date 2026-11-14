@@ -76,6 +76,37 @@ def test_ledger_report_roundtrips_to_identical_json(execution) -> None:
     assert report["grid"]["cell_count"] == 60
 
 
+def test_matrix_metrics_are_persisted_and_rebuilt(execution) -> None:
+    with sqlite3.connect(execution.db_path) as connection:
+        rows = {
+            row[0]: row[1]
+            for row in connection.execute(
+                "SELECT metric_key, metric_text FROM metrics WHERE scope = 'alignment' AND metric_text IS NOT NULL"
+            )
+        }
+    assert set(rows) == {"matrix", "device_groups", "metric_groups"}
+    stored_matrix = json.loads(rows["matrix"])
+    report = json.loads(execution.json_path.read_text(encoding="utf-8"))
+    assert stored_matrix == report["alignment"]["matrix"]
+    assert json.loads(rows["device_groups"]) == report["alignment"]["device_groups"]
+    assert json.loads(rows["metric_groups"]) == report["alignment"]["metric_groups"]
+    rebuilt = load_report_from_db(execution.db_path)
+    assert rebuilt["alignment"]["matrix"] == report["alignment"]["matrix"]
+    assert rebuilt["alignment"]["device_groups"] == report["alignment"]["device_groups"]
+    assert rebuilt["alignment"]["metric_groups"] == report["alignment"]["metric_groups"]
+    # The four historical alignment metrics remain numeric rows, untouched.
+    with sqlite3.connect(execution.db_path) as connection:
+        numeric = connection.execute(
+            "SELECT metric_key FROM metrics WHERE scope = 'alignment' AND metric_value IS NOT NULL ORDER BY metric_key"
+        ).fetchall()
+    assert [row[0] for row in numeric] == [
+        "common_cells",
+        "completion_rate",
+        "missing_any_cells",
+        "total_cells",
+    ]
+
+
 def test_rewriting_same_run_is_idempotent(execution) -> None:
     first_id = execution.run_id
     second = execute_contract(

@@ -34,6 +34,60 @@ def test_run_produces_json_and_markdown_with_constant_values(tmp_path: Path, cap
     assert series["dev-b2"]["clock"]["median_offset_us"] == 2_000_000
     assert (out_dir / "basic.md").is_file()
 
+
+def test_pairwise_matrix_reconciles_with_completion_rate(tmp_path: Path) -> None:
+    out_dir = tmp_path / "matrix-out"
+    code = main(["run", "--contract", str(ROOT / "fixtures" / "contracts" / "basic.yaml"), "--out-dir", str(out_dir)])
+    assert code == 0
+    report = json.loads((out_dir / "basic.json").read_text(encoding="utf-8"))
+    alignment = report["alignment"]
+    # Historical values keep their exact types and numbers.
+    assert alignment["completion_rate"] == 0.7
+    assert alignment["missing_any_cells"] == 18
+    matrix = alignment["matrix"]
+    assert matrix["total_cells"] == 60
+    assert [group["device_id"] for group in matrix["groups"]] == [
+        "dev-a1",
+        "dev-b2",
+        "dev-c3",
+        "dev-d4",
+        "dev-e5",
+    ]
+    assert len(matrix["pairs"]) == 5
+    assert all(len(row) == 5 for row in matrix["pairs"])
+    d4 = next(i for i, group in enumerate(matrix["groups"]) if group["device_id"] == "dev-d4")
+    e5 = next(i for i, group in enumerate(matrix["groups"]) if group["device_id"] == "dev-e5")
+    pair = matrix["pairs"][d4][e5]
+    assert pair == {
+        "total_cells": 60,
+        "common_cells": 42,
+        "missing_any_cells": 18,
+        "left_only_missing_cells": 9,
+        "right_only_missing_cells": 9,
+        "both_missing_cells": 0,
+    }
+    # Every pair partitions the grid and the all-group tie-out matches the
+    # historical completion summary exactly.
+    for row in matrix["pairs"]:
+        for entry in row:
+            assert (
+                entry["common_cells"]
+                + entry["left_only_missing_cells"]
+                + entry["right_only_missing_cells"]
+                + entry["both_missing_cells"]
+                == 60
+            )
+    assert all(row[i]["both_missing_cells"] == 60 - row[i]["common_cells"] for i, row in enumerate(matrix["pairs"]))
+    assert all(row[i]["left_only_missing_cells"] == 0 for i, row in enumerate(matrix["pairs"]))
+    devices = {item["key"]: item for item in alignment["device_groups"]}
+    assert devices["dev-d4"]["valid_cells"] == 51
+    assert devices["dev-d4"]["group_missing_only_cells"] == 9
+    assert devices["dev-a1"]["others_missing_only_cells"] == 18
+    metrics = {item["key"]: item for item in alignment["metric_groups"]}
+    assert metrics["temperature"]["series_count"] == 5
+    assert metrics["temperature"]["valid_cells"] == 42
+    assert metrics["temperature"]["common_with_all_cells"] == 42
+
 def test_deterministic_json_across_two_runs(tmp_path: Path) -> None:
     contract = str(ROOT / "fixtures" / "contracts" / "basic.yaml")
     first = tmp_path / "first"

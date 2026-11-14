@@ -97,7 +97,23 @@ resample:
     "common_cells": 42,
     "completion_rate": 0.7,
     "missing_any_cells": 18,
-    "total_cells": 60
+    "total_cells": 60,
+    "matrix": {
+      "total_cells": 60,
+      "groups": [{"device_id": "dev-a1", "metric": "temperature"}],
+      "pairs": [[
+        {
+          "common_cells": 60,
+          "missing_any_cells": 0,
+          "left_only_missing_cells": 0,
+          "right_only_missing_cells": 0,
+          "both_missing_cells": 0,
+          "total_cells": 60
+        }
+      ]]
+    },
+    "device_groups": [],
+    "metric_groups": []
   },
   "grid": {
     "cell_count": 60,
@@ -110,11 +126,24 @@ resample:
 }
 ```
 
+`alignment.matrix` 是按 `(device_id, metric)` 分组的成对完备度视角：`groups` 按
+设备与物理量排序，`pairs[i][j]` 给出两组之间共同有效格数、任一缺失数，以及缺失
+方向划分（仅左组缺 `left_only_missing_cells`、仅右组缺
+`right_only_missing_cells`、两边都缺 `both_missing_cells`），四项计数之和恒等于
+网格格数。对角线只按该分组自身的 `ok` 有效率定义，`no_left` 等推断标记不会混入
+有效侧，缺失格全部计入 `both_missing_cells`；`in_gap` 一律视为缺失，因此矩阵反推
+的缺失数与 `missing_any_cells`、`completion_rate` 严格对账。`device_groups` 与
+`metric_groups` 分别按设备、物理量再汇总一份，含自身有效格、与全体共同有效格及
+三类缺失方向，可直接在 JSON 中按键查询。历史字段 `total_cells`、`common_cells`、
+`missing_any_cells`、`completion_rate` 的数值与类型保持不变。
+
 Markdown 报告包含项目摘要、契约快照、每路质量表、时钟偏移估计表、缺口清单和
 事件/错误清单。缺口与错误清单按 `gap_report_limit` 截断并标注总数。
 
 SQLite 台账固定包含五张表：`run`、`series`、`aligned`、`metrics`、`errors`。
 `aligned` 每个系列每格一行，保存 `grid_index`、`ts_us`、`value`、`marker`。
+成对矩阵与两份分组汇总以紧凑 JSON 文本存入 `metrics` 表的 `alignment` 作用域
+（键名 `matrix`、`device_groups`、`metric_groups`），台账重建报告时原样还原。
 
 ## 确定性与脱敏
 - 时间戳与网格全部使用整数微秒，不参与浮点比较。
