@@ -84,3 +84,159 @@ def test_malformed_anchor_event_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(DataError) as caught:
         load_anchors(path)
     assert caught.value.code == "E_ANCHOR_VALUE"
+
+
+def _write_anchors(tmp_path: Path, body: str) -> Path:
+    path = tmp_path / "anchors.yaml"
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+def test_offset_sign_flip_is_rejected(tmp_path: Path) -> None:
+    path = _write_anchors(
+        tmp_path,
+        "version: 1\n"
+        "reference_device: dev-a1\n"
+        "events:\n"
+        "  - id: evt-1\n"
+        "    observations:\n"
+        "      dev-a1: 1000\n"
+        "      dev-b2: 1010\n"
+        "  - id: evt-2\n"
+        "    observations:\n"
+        "      dev-a1: 2000\n"
+        "      dev-b2: 2010\n"
+        "  - id: evt-3\n"
+        "    observations:\n"
+        "      dev-a1: 3000\n"
+        "      dev-b2: 2995\n",
+    )
+    with pytest.raises(DataError) as caught:
+        load_anchors(path)
+    error = caught.value
+    assert error.code == "E_ANCHOR_FLIP"
+    assert error.detail == {
+        "device": "dev-b2",
+        "first_event_id": "evt-2",
+        "flip_event_id": "evt-3",
+        "first_offset_us": 10,
+        "flip_offset_us": -5,
+    }
+
+
+def test_negative_to_positive_sign_flip_is_rejected(tmp_path: Path) -> None:
+    path = _write_anchors(
+        tmp_path,
+        "version: 1\n"
+        "reference_device: dev-a1\n"
+        "events:\n"
+        "  - id: evt-1\n"
+        "    observations:\n"
+        "      dev-a1: 1000\n"
+        "      dev-b2: 990\n"
+        "  - id: evt-2\n"
+        "    observations:\n"
+        "      dev-a1: 2000\n"
+        "      dev-b2: 2005\n",
+    )
+    with pytest.raises(DataError) as caught:
+        load_anchors(path)
+    error = caught.value
+    assert error.code == "E_ANCHOR_FLIP"
+    assert error.detail["first_event_id"] == "evt-1"
+    assert error.detail["flip_event_id"] == "evt-2"
+    assert error.detail["first_offset_us"] == -10
+    assert error.detail["flip_offset_us"] == 5
+
+
+def test_middle_absence_does_not_count_as_flip(tmp_path: Path) -> None:
+    # dev-b2 appears only in the first and last comparable events; in between
+    # it is absent once and the reference device is absent once.
+    path = _write_anchors(
+        tmp_path,
+        "version: 1\n"
+        "reference_device: dev-a1\n"
+        "events:\n"
+        "  - id: evt-1\n"
+        "    observations:\n"
+        "      dev-a1: 1000\n"
+        "      dev-b2: 1010\n"
+        "  - id: evt-2\n"
+        "    observations:\n"
+        "      dev-a1: 2000\n"
+        "      dev-c3: 2005\n"
+        "  - id: evt-3\n"
+        "    observations:\n"
+        "      dev-b2: 3010\n"
+        "      dev-c3: 3005\n"
+        "  - id: evt-4\n"
+        "    observations:\n"
+        "      dev-a1: 4000\n"
+        "      dev-b2: 4010\n",
+    )
+    anchors = load_anchors(path)
+    assert [event.event_id for event in anchors.events] == [
+        "evt-1",
+        "evt-2",
+        "evt-3",
+        "evt-4",
+    ]
+    assert anchors.events[0].observations["dev-b2"] - anchors.events[0].observations["dev-a1"] == 10
+    assert anchors.events[3].observations["dev-b2"] - anchors.events[3].observations["dev-a1"] == 10
+
+
+@pytest.mark.parametrize(
+    ("body", "expected_code"),
+    [
+        (
+            "version: 1\n"
+            "bogus: true\n"
+            "reference_device: dev-a1\n"
+            "events:\n"
+            "  - id: evt-1\n"
+            "    observations:\n"
+            "      dev-a1: 1000\n"
+            "      dev-b2: 1010\n"
+            "  - id: evt-2\n"
+            "    observations:\n"
+            "      dev-a1: 2000\n"
+            "      dev-b2: 1995\n",
+            "E_ANCHOR_UNKNOWN",
+        ),
+        (
+            "reference_device: dev-a1\n"
+            "events:\n"
+            "  - id: evt-1\n"
+            "    observations:\n"
+            "      dev-a1: 1000\n"
+            "      dev-b2: 1010\n"
+            "  - id: evt-2\n"
+            "    observations:\n"
+            "      dev-a1: 2000\n"
+            "      dev-b2: 1995\n",
+            "E_ANCHOR_MISSING",
+        ),
+        (
+            "version: 2\n"
+            "reference_device: dev-a1\n"
+            "events:\n"
+            "  - id: evt-1\n"
+            "    observations:\n"
+            "      dev-a1: 1000\n"
+            "      dev-b2: 1010\n"
+            "  - id: evt-2\n"
+            "    observations:\n"
+            "      dev-a1: 2000\n"
+            "      dev-b2: 1995\n",
+            "E_ANCHOR_VALUE",
+        ),
+    ],
+)
+def test_existing_anchor_errors_take_precedence_over_flip(
+    tmp_path: Path, body: str, expected_code: str
+) -> None:
+    path = _write_anchors(tmp_path, body)
+    with pytest.raises(DataError) as caught:
+        load_anchors(path)
+    assert caught.value.code == expected_code
+    assert caught.value.code != "E_ANCHOR_FLIP"

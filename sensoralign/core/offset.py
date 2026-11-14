@@ -63,7 +63,8 @@ def load_anchors(path: Path) -> AnchorSet:
 
     Raises:
         DataError: ``E_ANCHOR_READ``, ``E_ANCHOR_YAML``, ``E_ANCHOR_TYPE``,
-            ``E_ANCHOR_MISSING``, ``E_ANCHOR_UNKNOWN`` or ``E_ANCHOR_VALUE``.
+            ``E_ANCHOR_MISSING``, ``E_ANCHOR_UNKNOWN``, ``E_ANCHOR_VALUE`` or
+            ``E_ANCHOR_FLIP``.
     """
     shown = path.name
     try:
@@ -121,7 +122,50 @@ def load_anchors(path: Path) -> AnchorSet:
         events.append(AnchorEvent(event_id, parsed))
     if not reference_seen:
         raise DataError("E_ANCHOR_VALUE", "reference device is absent from every event", path=shown, field="reference_device")
+    _check_offset_sign_consistency(events, reference, shown)
     return AnchorSet(reference, tuple(events), hashlib.sha256(raw).hexdigest())
+
+
+def _check_offset_sign_consistency(events: Sequence[AnchorEvent], reference: str, path: str) -> None:
+    """Reject a per-device sign flip of ``device_ts - reference_ts``.
+
+    Events are walked in file order. A comparison is skipped when either the
+    device or the reference device is absent from an event, so gaps never count
+    as a flip. A zero difference carries no sign and does not establish one.
+    """
+    last_sign: dict[str, int] = {}
+    last_event_id: dict[str, str] = {}
+    last_diff: dict[str, int] = {}
+    for event in events:
+        reference_ts = event.observations.get(reference)
+        if reference_ts is None:
+            continue
+        for device, device_ts in event.observations.items():
+            if device == reference:
+                continue
+            diff = int(device_ts) - int(reference_ts)
+            sign = (diff > 0) - (diff < 0)
+            if sign == 0:
+                continue
+            previous = last_sign.get(device)
+            if previous is not None and previous != sign:
+                raise DataError(
+                    "E_ANCHOR_FLIP",
+                    f"offset sign flipped for device {device} between events "
+                    f"{last_event_id[device]} and {event.event_id}",
+                    path=path,
+                    field="events",
+                    detail={
+                        "device": device,
+                        "first_event_id": last_event_id[device],
+                        "flip_event_id": event.event_id,
+                        "first_offset_us": last_diff[device],
+                        "flip_offset_us": diff,
+                    },
+                )
+            last_sign[device] = sign
+            last_event_id[device] = event.event_id
+            last_diff[device] = diff
 
 
 def estimate_offsets(

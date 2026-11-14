@@ -106,6 +106,10 @@ events:
 - `reference_device` 必须出现在至少一个事件中。
 - 每个事件至少包含两个设备的整数微秒观测；事件 id 唯一。
 - 未列出的字段、非整数时间戳、重复事件 id 均报 `E_ANCHOR_*`。
+- 逐设备按文件顺序比较各共同事件的原始偏移 `device_ts - reference_ts`：
+  正负符号一旦在相邻两次有效比较间翻转即报 `E_ANCHOR_FLIP`，detail 给出
+  翻转前后两个事件 id 与对应差值；设备或参考设备缺席的事件跳过比较，
+  零差值不建立符号，中断不视为翻转。
 - 对每个设备，取与参考设备的共同事件。原始偏移 `device_ts - reference_ts`。
 - 锚点数 `< 3`：状态 `insufficient`，不执行修正，并写 `W_OFFSET_INSUFFICIENT`。
 - 状态枚举：`reference`（参考设备）、`disabled`（`clock_skew: none`）、
@@ -244,6 +248,7 @@ resample:
 | `E_ANCHOR_MISSING` | 缺少锚点必填字段。 |
 | `E_ANCHOR_UNKNOWN` | 未知锚点字段。 |
 | `E_ANCHOR_VALUE` | 事件、设备或时间戳取值非法，或参考设备缺失。 |
+| `E_ANCHOR_FLIP` | 同一设备跨事件的 `device_ts - reference_ts` 符号发生翻转。 |
 | `E_GRID_NO_OVERLAP` | `from_union` 无覆盖或交集。 |
 | `E_GRID_NO_STEP` | 无法推断 `from_union` 步长。 |
 | `E_GRID_EMPTY` | 显式网格无格。 |
