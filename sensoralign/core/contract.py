@@ -36,6 +36,7 @@ TOP_LEVEL_KEYS = {
     "clock_skew",
     "resample",
     "gap_report_limit",
+    "shift_floor_us",
 }
 INPUT_KEYS = {"id", "path", "format", "device_id", "metric"}
 NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
@@ -115,6 +116,9 @@ def load_contract(path: Path) -> Contract:
         )
     resample = _parse_resample(document.get("resample"), seen_ids, shown)
     gap_report_limit = _int(document.get("gap_report_limit", 20), "gap_report_limit", shown, minimum=1)
+    shift_floor_us = (
+        None if "shift_floor_us" not in document else _int(document["shift_floor_us"], "shift_floor_us", shown, minimum=0)
+    )
 
     root = find_project_root(path)
     return Contract(
@@ -131,6 +135,7 @@ def load_contract(path: Path) -> Contract:
         clock_skew=clock_skew,
         resample=resample,
         gap_report_limit=gap_report_limit,
+        shift_floor_us=shift_floor_us,
         source_path=path.resolve(),
         source_sha256=hashlib.sha256(raw).hexdigest(),
         source_dir=path.resolve().parent,

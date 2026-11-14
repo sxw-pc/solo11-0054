@@ -43,6 +43,45 @@ def test_valid_basic_contract_and_snapshot() -> None:
     assert snapshot["grid"]["mode"] == "explicit"
     assert snapshot["resample"]["overrides"] == {"dev-b2": "step", "dev-c3": "mean"}
     assert "source_path" not in snapshot
+    assert contract.shift_floor_us is None
+    assert "shift_floor_us" not in snapshot
+
+
+def test_shift_floor_is_parsed_and_stored_in_snapshot(tmp_path: Path) -> None:
+    body = minimal_contract() + "shift_floor_us: 1700000000000000\n"
+    contract = load_contract(write_contract(tmp_path, body))
+    assert contract.shift_floor_us == 1_700_000_000_000_000
+    assert contract.snapshot()["shift_floor_us"] == 1_700_000_000_000_000
+    assert contract.snapshot() == load_contract(write_contract(tmp_path, body)).snapshot()
+
+
+def test_shift_floor_zero_is_legal(tmp_path: Path) -> None:
+    contract = load_contract(write_contract(tmp_path, minimal_contract() + "shift_floor_us: 0\n"))
+    assert contract.shift_floor_us == 0
+    assert contract.snapshot()["shift_floor_us"] == 0
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "shift_floor_us: 1000000.0\n",
+        "shift_floor_us: true\n",
+        "shift_floor_us: '1000000'\n",
+        "shift_floor_us: null\n",
+    ],
+)
+def test_shift_floor_must_be_an_integer(tmp_path: Path, field: str) -> None:
+    with pytest.raises(ContractError) as caught:
+        load_contract(write_contract(tmp_path, minimal_contract() + field))
+    assert caught.value.code == "E_CONTRACT_TYPE"
+    assert caught.value.field == "shift_floor_us"
+
+
+def test_shift_floor_must_be_non_negative(tmp_path: Path) -> None:
+    with pytest.raises(ContractError) as caught:
+        load_contract(write_contract(tmp_path, minimal_contract() + "shift_floor_us: -1\n"))
+    assert caught.value.code == "E_CONTRACT_VALUE"
+    assert caught.value.field == "shift_floor_us"
 
 
 def test_unknown_top_level_field(tmp_path: Path) -> None:

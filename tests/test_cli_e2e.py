@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import sqlite3
 from pathlib import Path
 
 from sensoralign.cli import main
@@ -97,6 +98,47 @@ def test_missing_ledger_exit_code_is_one(tmp_path: Path, capsys) -> None:
     code = main(["report", "--db", str(tmp_path / "missing.db"), "--format", "markdown"])
     assert code == 1
     assert "E_LEDGER_READ" in capsys.readouterr().err
+
+def _only_run_id(db_path: Path) -> str:
+    connection = sqlite3.connect(db_path)
+    try:
+        return connection.execute("SELECT run_id FROM run").fetchone()[0]
+    finally:
+        connection.close()
+
+
+def test_shift_floor_changes_run_id_and_stays_reproducible(tmp_path: Path) -> None:
+    base = (ROOT / "fixtures" / "contracts" / "basic.yaml").read_text(encoding="utf-8")
+    floor = BASE + 10_000_000
+    shifted_contract = tmp_path / "shifted.yaml"
+    shifted_contract.write_text(base + f"shift_floor_us: {floor}\n", encoding="utf-8")
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    assert main(["run", "--contract", str(shifted_contract), "--out-dir", str(first)]) == 0
+    assert main(["run", "--contract", str(shifted_contract), "--out-dir", str(second)]) == 0
+    assert (first / "basic.json").read_bytes() == (second / "basic.json").read_bytes()
+    report = json.loads((first / "basic.json").read_text(encoding="utf-8"))
+    assert report["contract"]["snapshot"]["shift_floor_us"] == floor
+    assert report["grid"]["origin_us"] == BASE
+    shifted_run_id = _only_run_id(first / "align.db")
+    assert shifted_run_id == _only_run_id(second / "align.db")
+
+    legacy = tmp_path / "legacy"
+    assert main(["run", "--contract", str(ROOT / "fixtures" / "contracts" / "basic.yaml"), "--out-dir", str(legacy)]) == 0
+    legacy_report = json.loads((legacy / "basic.json").read_text(encoding="utf-8"))
+    assert "shift_floor_us" not in legacy_report["contract"]["snapshot"]
+    assert legacy_report["contract"]["sha256"] != report["contract"]["sha256"]
+    assert _only_run_id(legacy / "align.db") != shifted_run_id
+
+
+def test_shift_floor_default_run_is_unchanged(tmp_path: Path) -> None:
+    out_dir = tmp_path / "default"
+    assert main(["run", "--contract", str(ROOT / "fixtures" / "contracts" / "basic.yaml"), "--out-dir", str(out_dir)]) == 0
+    report = json.loads((out_dir / "basic.json").read_text(encoding="utf-8"))
+    assert report["contract"]["snapshot"].get("shift_floor_us") is None
+    assert report["alignment"]["completion_rate"] == 0.7
+    assert report["grid"]["cell_count"] == 60
+
 
 def test_no_network_modules_are_imported() -> None:
     forbidden = {"socket", "urllib", "http", "requests", "ftplib", "smtplib", "telnetlib", "aiohttp", "websockets"}

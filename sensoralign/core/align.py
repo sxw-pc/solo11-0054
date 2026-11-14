@@ -137,6 +137,7 @@ def align_contract(contract: Contract) -> AlignResult:
                 )
             )
         corrected = _normalize_corrected(corrected, series, events)
+        corrected = _shift_to_floor(corrected, contract.shift_floor_us)
         prepared.append((spec, series, sanitized, corrected, estimate))
 
     grid = build_grid(contract.grid, [corrected for _s, _r, _sa, corrected, _o in prepared])
@@ -248,6 +249,25 @@ def _normalize_corrected(points: list[SeriesPoint], series: Series, events: list
             continue
         unique.append(point)
     return unique
+
+
+def _shift_to_floor(points: list[SeriesPoint], floor_us: int | None) -> list[SeriesPoint]:
+    """Translate one corrected timeline so no point precedes ``floor_us``.
+
+    The series is shifted rigidly by a single delta: its earliest point lands
+    exactly on ``floor_us`` when it was below it. Every adjacent
+    integer-microsecond interval is therefore preserved pairwise, the sequence
+    stays strictly increasing and no ``W_CLOCK_REORDER`` can be introduced.
+    Values and source line numbers are carried through unchanged. An empty
+    series, a disabled floor, or a series already at or above the floor is
+    returned as-is.
+    """
+    if floor_us is None or not points:
+        return points
+    delta = floor_us - min(point.ts_us for point in points)
+    if delta <= 0:
+        return points
+    return [SeriesPoint(point.ts_us + delta, point.value, point.line) for point in points]
 
 
 def _display_path(path: Path, project_root: Path) -> str:

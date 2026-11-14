@@ -64,6 +64,8 @@ class Contract:
     source_sha256: str
     source_dir: Path
     project_root: Path
+    shift_floor_us: int | None = None
+    """Optional lower bound (µs) applied after clock correction; ``None`` disables."""
 
     def resolve_path(self, raw: str) -> Path:
         """Resolve relative paths against project root, contract dir, then cwd."""
@@ -87,7 +89,7 @@ class Contract:
                 "step_us": self.grid.step_us,
                 "end_us": self.grid.end_us,
             }
-        return {
+        snapshot: dict[str, Any] = {
             "version": self.version,
             "name": self.name,
             "description": self.description,
@@ -114,3 +116,8 @@ class Contract:
             },
             "gap_report_limit": self.gap_report_limit,
         }
+        # Omitted when disabled so snapshots (and therefore run ids) of existing
+        # contracts stay byte-identical to the pre-shift behaviour.
+        if self.shift_floor_us is not None:
+            snapshot["shift_floor_us"] = self.shift_floor_us
+        return snapshot

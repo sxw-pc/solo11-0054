@@ -19,6 +19,7 @@
 | `clock_skew` | str | 否 | `none` | `none` / `constant` / `linear`。 |
 | `resample` | mapping | 否 | `{default: linear}` | 默认策略和按 series id 的覆盖。 |
 | `gap_report_limit` | int | 否 | `20` | 报告中缺口和事件清单的最大展示条数。 |
+| `shift_floor_us` | int | 否 | `null`（不启用） | 时钟校正后的时间轴下界，整数微秒，必须 `>= 0`；启用时整条校正后时间轴整体平移，详见第 5.1 节。 |
 
 顶层未列出的字段触发 `E_CONTRACT_UNKNOWN`。`version` 不是 1、布尔值冒充整数、
 空字符串、非法枚举均会失败。
@@ -128,6 +129,27 @@ t_ref = (t_dev - intercept + slope * origin / 1e6) / (1 + slope / 1e6)
 
 结果四舍五入（half-away-from-zero）为整数微秒。若分母接近 0，状态为
 `degenerate`，不应用修正。
+
+### 5.1 时间轴下界 `shift_floor_us`
+```yaml
+shift_floor_us: 1700000000000000
+```
+
+- 可选字段；缺省或省略时不启用，校正后时间轴保持原样，既有契约的快照与
+  `run_id` 不变。
+- 启用后，对每一路完成时钟校正与去重后的时间点序列独立计算一个常量位移
+  `delta = shift_floor_us - min(ts_us)`；仅当 `min(ts_us) < shift_floor_us` 时应用，
+  否则该路保持不变。平移后该路最早点恰为 `shift_floor_us`。
+- 平移是整条时间线的刚性平移，只改变绝对位置：任意相邻两点的整数微秒间隔与
+  平移前逐对一致，严格单调递增关系不变，因此不会引入 `W_CLOCK_REORDER` 或
+  `W_CLOCK_DUPLICATE_TS`。不同序列的位移量可以不同。
+- 点的 `value`、源文件行号及偏移估计的 `median_offset_us` /
+  `residual_median_us` 均不受影响；`offset` 仍描述原始设备时钟与参考时钟的关系。
+- `shift_floor_us` 必须是整数（布尔、浮点、字符串、显式 `null` 均按
+  `E_CONTRACT_TYPE` 拒绝），且 `>= 0`（负数报 `E_CONTRACT_VALUE`）。
+- 网格本身不平移；`from_union` 会按平移后的覆盖区间重新求交。契约作者使用显式
+  网格时应让网格范围与下界匹配。字段进入契约快照，因此启用该字段的契约具有
+  独立且可复现的 `run_id`；缺省时快照不含该键。
 
 ## 6. 重采样
 ```yaml
