@@ -18,7 +18,7 @@ from pathlib import Path
 
 import yaml
 
-from .errors import DataError
+from .errors import DataError, Stage
 from .series import SeriesPoint
 
 ANCHOR_KEYS = {"version", "reference_device", "events"}
@@ -69,27 +69,34 @@ def load_anchors(path: Path) -> AnchorSet:
     try:
         raw = path.read_bytes()
     except OSError as exc:
-        raise DataError("E_ANCHOR_READ", f"cannot read anchors: {exc}", path=shown) from exc
+        raise DataError("E_ANCHOR_READ", f"cannot read anchors: {exc}",
+                        stage=Stage.CLOCK_OFFSET, path=shown) from exc
     try:
         document = yaml.safe_load(raw.decode("utf-8-sig"))
     except (UnicodeDecodeError, yaml.YAMLError) as exc:
-        raise DataError("E_ANCHOR_YAML", f"invalid anchor YAML: {exc}", path=shown) from exc
+        raise DataError("E_ANCHOR_YAML", f"invalid anchor YAML: {exc}",
+                        stage=Stage.CLOCK_OFFSET, path=shown) from exc
     if not isinstance(document, dict):
-        raise DataError("E_ANCHOR_TYPE", "anchor root must be a mapping", path=shown)
+        raise DataError("E_ANCHOR_TYPE", "anchor root must be a mapping", stage=Stage.CLOCK_OFFSET, path=shown)
     unknown = sorted(set(document) - ANCHOR_KEYS)
     if unknown:
-        raise DataError("E_ANCHOR_UNKNOWN", f"unknown anchor field: {unknown[0]}", path=shown, field=unknown[0])
+        raise DataError("E_ANCHOR_UNKNOWN", f"unknown anchor field: {unknown[0]}",
+                        stage=Stage.CLOCK_OFFSET, path=shown, field=unknown[0])
     for required in ("version", "reference_device", "events"):
         if required not in document:
-            raise DataError("E_ANCHOR_MISSING", f"missing anchor field: {required}", path=shown, field=required)
+            raise DataError("E_ANCHOR_MISSING", f"missing anchor field: {required}",
+                            stage=Stage.CLOCK_OFFSET, path=shown, field=required)
     if document["version"] != 1:
-        raise DataError("E_ANCHOR_VALUE", "anchor version must be 1", path=shown, field="version")
+        raise DataError("E_ANCHOR_VALUE", "anchor version must be 1",
+                        stage=Stage.CLOCK_OFFSET, path=shown, field="version")
     reference = document["reference_device"]
     if not isinstance(reference, str) or not reference.strip():
-        raise DataError("E_ANCHOR_VALUE", "reference_device must be text", path=shown, field="reference_device")
+        raise DataError("E_ANCHOR_VALUE", "reference_device must be text",
+                        stage=Stage.CLOCK_OFFSET, path=shown, field="reference_device")
     raw_events = document["events"]
     if not isinstance(raw_events, list) or not raw_events:
-        raise DataError("E_ANCHOR_VALUE", "events must be a non-empty list", path=shown, field="events")
+        raise DataError("E_ANCHOR_VALUE", "events must be a non-empty list",
+                        stage=Stage.CLOCK_OFFSET, path=shown, field="events")
 
     events: list[AnchorEvent] = []
     seen: set[str] = set()
@@ -97,30 +104,38 @@ def load_anchors(path: Path) -> AnchorSet:
     for index, entry in enumerate(raw_events):
         field = f"events[{index}]"
         if not isinstance(entry, dict):
-            raise DataError("E_ANCHOR_TYPE", f"{field} must be a mapping", path=shown, field=field)
+            raise DataError("E_ANCHOR_TYPE", f"{field} must be a mapping",
+                            stage=Stage.CLOCK_OFFSET, path=shown, field=field)
         unknown = sorted(set(entry) - EVENT_KEYS)
         if unknown:
-            raise DataError("E_ANCHOR_UNKNOWN", f"unknown event field: {unknown[0]}", path=shown, field=field)
+            raise DataError("E_ANCHOR_UNKNOWN", f"unknown event field: {unknown[0]}",
+                            stage=Stage.CLOCK_OFFSET, path=shown, field=field)
         event_id = entry.get("id")
         if not isinstance(event_id, str) or not event_id.strip():
-            raise DataError("E_ANCHOR_VALUE", f"{field}.id must be text", path=shown, field=field)
+            raise DataError("E_ANCHOR_VALUE", f"{field}.id must be text",
+                            stage=Stage.CLOCK_OFFSET, path=shown, field=field)
         if event_id in seen:
-            raise DataError("E_ANCHOR_VALUE", f"duplicate event id: {event_id}", path=shown, field=field)
+            raise DataError("E_ANCHOR_VALUE", f"duplicate event id: {event_id}",
+                            stage=Stage.CLOCK_OFFSET, path=shown, field=field)
         seen.add(event_id)
         observations = entry.get("observations")
         if not isinstance(observations, dict) or len(observations) < 2:
-            raise DataError("E_ANCHOR_VALUE", f"{field}.observations needs at least two devices", path=shown, field=field)
+            raise DataError("E_ANCHOR_VALUE", f"{field}.observations needs at least two devices",
+                            stage=Stage.CLOCK_OFFSET, path=shown, field=field)
         parsed: dict[str, int] = {}
         for device, timestamp in observations.items():
             if not isinstance(device, str) or not device.strip():
-                raise DataError("E_ANCHOR_VALUE", "observation device id must be text", path=shown, field=field)
+                raise DataError("E_ANCHOR_VALUE", "observation device id must be text",
+                                stage=Stage.CLOCK_OFFSET, path=shown, field=field)
             if isinstance(timestamp, bool) or not isinstance(timestamp, int):
-                raise DataError("E_ANCHOR_VALUE", "anchor timestamps must be integer microseconds", path=shown, field=field)
+                raise DataError("E_ANCHOR_VALUE", "anchor timestamps must be integer microseconds",
+                                stage=Stage.CLOCK_OFFSET, path=shown, field=field)
             parsed[device] = int(timestamp)
         reference_seen = reference_seen or reference in parsed
         events.append(AnchorEvent(event_id, parsed))
     if not reference_seen:
-        raise DataError("E_ANCHOR_VALUE", "reference device is absent from every event", path=shown, field="reference_device")
+        raise DataError("E_ANCHOR_VALUE", "reference device is absent from every event",
+                        stage=Stage.CLOCK_OFFSET, path=shown, field="reference_device")
     return AnchorSet(reference, tuple(events), hashlib.sha256(raw).hexdigest())
 
 

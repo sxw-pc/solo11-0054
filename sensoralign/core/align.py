@@ -13,7 +13,7 @@ from pathlib import Path
 
 from ..io.loaders import load_series
 from .contract_model import Contract, GridSpec, InputSpec
-from .errors import DataError, Event
+from .errors import DataError, Event, Stage
 from .offset import OffsetEstimate, correct_points, estimate_offsets, load_anchors
 from .quality import (
     AlignmentQuality,
@@ -128,7 +128,7 @@ def align_contract(contract: Contract) -> AlignResult:
                 Event(
                     "W_OFFSET_INSUFFICIENT",
                     "warning",
-                    "clock_offset",
+                    Stage.CLOCK_OFFSET,
                     f"clock correction not applied: status {estimate.status} with {estimate.anchor_count} anchors",
                     series_id=series.series_id,
                     path=series.input_path,
@@ -149,7 +149,7 @@ def align_contract(contract: Contract) -> AlignResult:
                 Event(
                     "W_GAP",
                     "warning",
-                    "gap_scan",
+                    Stage.GAP_SCAN,
                     f"gap of {gap.duration_us} us from {gap.start_us} to {gap.end_us}",
                     series_id=series.series_id,
                     path=series.input_path,
@@ -189,20 +189,36 @@ def build_grid(grid_spec: GridSpec, corrected_series: Sequence[Sequence[SeriesPo
     if grid_spec.mode == "from_union":
         nonempty = [points for points in corrected_series if points]
         if len(nonempty) != len(corrected_series) or not nonempty:
-            raise DataError("E_GRID_NO_OVERLAP", "from_union requires at least one point in every series")
+            raise DataError(
+                "E_GRID_NO_OVERLAP",
+                "from_union requires at least one point in every series",
+                stage=Stage.RESAMPLE,
+            )
         common_start = max(points[0].ts_us for points in nonempty)
         common_end = min(points[-1].ts_us for points in nonempty)
         if common_start > common_end:
-            raise DataError("E_GRID_NO_OVERLAP", "input coverage windows do not overlap")
+            raise DataError(
+                "E_GRID_NO_OVERLAP",
+                "input coverage windows do not overlap",
+                stage=Stage.RESAMPLE,
+            )
         intervals = [min_interval_us(points) for points in nonempty]
         positive = [interval for interval in intervals if interval is not None]
         if not positive:
-            raise DataError("E_GRID_NO_STEP", "cannot infer a union-grid step from single-point series")
+            raise DataError(
+                "E_GRID_NO_STEP",
+                "cannot infer a union-grid step from single-point series",
+                stage=Stage.RESAMPLE,
+            )
         step = min(positive)
         end = common_end + 1
         count = (common_end - common_start) // step + 1
         if count > MAX_GRID_CELLS:
-            raise DataError("E_GRID_TOO_LARGE", "resolved grid exceeds 1,000,000 cells")
+            raise DataError(
+                "E_GRID_TOO_LARGE",
+                "resolved grid exceeds 1,000,000 cells",
+                stage=Stage.RESAMPLE,
+            )
         times = tuple(common_start + index * step for index in range(count))
         return GridInfo("from_union", common_start, step, end, times)
 
@@ -211,9 +227,13 @@ def build_grid(grid_spec: GridSpec, corrected_series: Sequence[Sequence[SeriesPo
     end = int(grid_spec.end_us)  # type: ignore[arg-type]
     count = (end - origin + step - 1) // step
     if count <= 0:
-        raise DataError("E_GRID_EMPTY", "explicit grid contains no cells")
+        raise DataError("E_GRID_EMPTY", "explicit grid contains no cells", stage=Stage.RESAMPLE)
     if count > MAX_GRID_CELLS:
-        raise DataError("E_GRID_TOO_LARGE", "resolved grid exceeds 1,000,000 cells")
+        raise DataError(
+            "E_GRID_TOO_LARGE",
+            "resolved grid exceeds 1,000,000 cells",
+            stage=Stage.RESAMPLE,
+        )
     times = tuple(range(origin, end, step))
     return GridInfo("explicit", origin, step, end, times)
 
@@ -224,7 +244,7 @@ def _normalize_corrected(points: list[SeriesPoint], series: Series, events: list
             Event(
                 "W_CLOCK_REORDER",
                 "warning",
-                "clock_correction",
+                Stage.CLOCK_CORRECTION,
                 "clock correction reordered timestamps; stable sort applied",
                 series_id=series.series_id,
                 path=series.input_path,
@@ -238,7 +258,7 @@ def _normalize_corrected(points: list[SeriesPoint], series: Series, events: list
                 Event(
                     "W_CLOCK_DUPLICATE_TS",
                     "warning",
-                    "clock_correction",
+                    Stage.CLOCK_CORRECTION,
                     f"clock correction collapsed a timestamp at {point.ts_us}; first kept",
                     series_id=series.series_id,
                     path=series.input_path,

@@ -11,12 +11,30 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
+from enum import Enum
 from typing import Any
 
 EXIT_OK = 0
 EXIT_OTHER = 1
 EXIT_CONTRACT = 2
 EXIT_DATA = 3
+
+
+class Stage(Enum):
+    """The single authoritative assignment of an audit item to a pipeline stage.
+
+    Member values are stable strings written verbatim into report ``errors``
+    arrays and the ledger ``errors`` table, where they participate in
+    ``result_sha256``; they must never be renamed.
+    """
+
+    LOAD = "load"
+    TIMESTAMP_HYGIENE = "timestamp_hygiene"
+    CLOCK_OFFSET = "clock_offset"
+    CLOCK_CORRECTION = "clock_correction"
+    GAP_SCAN = "gap_scan"
+    RESAMPLE = "resample"
+    QUALITY = "quality"
 
 
 class SensorAlignError(Exception):
@@ -29,6 +47,7 @@ class SensorAlignError(Exception):
         code: str,
         message: str,
         *,
+        stage: Stage = Stage.LOAD,
         path: str | None = None,
         line: int | None = None,
         field: str | None = None,
@@ -37,6 +56,7 @@ class SensorAlignError(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
+        self.stage = _require_stage(stage)
         self.path = path
         self.line = line
         self.field = field
@@ -47,6 +67,7 @@ class SensorAlignError(Exception):
         return {
             "code": self.code,
             "message": self.message,
+            "stage": self.stage.value,
             "path": self.path,
             "line": self.line,
             "field": self.field,
@@ -72,13 +93,19 @@ class LedgerError(SensorAlignError):
     exit_code = EXIT_OTHER
 
 
+def _require_stage(stage: Stage) -> Stage:
+    if not isinstance(stage, Stage):
+        raise TypeError(f"stage must be a Stage member, got {type(stage).__name__}")
+    return stage
+
+
 @dataclass(frozen=True)
 class Event:
     """A deterministic audit event retained in reports and the ledger."""
 
     code: str
     severity: str
-    stage: str
+    stage: Stage
     message: str
     series_id: str | None = None
     path: str | None = None
@@ -86,13 +113,17 @@ class Event:
     field: str | None = None
     detail: dict[str, Any] = dataclass_field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.stage, Stage):
+            raise TypeError(f"stage must be a Stage member, got {type(self.stage).__name__}")
+
     def to_record(self, seq: int) -> dict[str, Any]:
         """Convert the event to the stable row shape used by reports."""
         return {
             "seq": seq,
             "code": self.code,
             "severity": self.severity,
-            "stage": self.stage,
+            "stage": self.stage.value,
             "series_id": self.series_id,
             "path": self.path,
             "line": self.line,

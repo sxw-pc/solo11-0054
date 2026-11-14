@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from sensoralign.core.errors import DataError
+from sensoralign.core.errors import DataError, Stage
 from sensoralign.core.series import SeriesPoint
 from sensoralign.core.timestamps import (
     count_inversions,
@@ -79,9 +79,13 @@ def test_reject_duplicate_and_conflict() -> None:
     with pytest.raises(DataError) as duplicate:
         sanitize_points([point(100, 1.0, 1), point(100, 1.0, 2)], duplicate_policy="reject")
     assert duplicate.value.code == "E_TS_DUPLICATE"
+    assert duplicate.value.stage is Stage.TIMESTAMP_HYGIENE
+    assert duplicate.value.stage.value == "timestamp_hygiene"
+    assert duplicate.value.as_dict()["stage"] == "timestamp_hygiene"
     with pytest.raises(DataError) as conflict:
         sanitize_points([point(100, 1.0, 1), point(100, 2.0, 2)], conflict_policy="reject")
     assert conflict.value.code == "E_TS_CONFLICT"
+    assert conflict.value.stage.value == "timestamp_hygiene"
 
 
 def test_find_gaps_is_strict_and_supports_negative_time() -> None:
