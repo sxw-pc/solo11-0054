@@ -78,8 +78,12 @@ class AlignResult:
     events: list[Event]
 
 
-def align_contract(contract: Contract) -> AlignResult:
+def align_contract(contract: Contract, *, max_workers: int | None = None) -> AlignResult:
     """Execute every stage of an alignment contract.
+
+    ``max_workers`` controls the ordered parallel estimation of per-device
+    clock offsets; the default pool and ``max_workers=1`` (forced serial) both
+    produce byte-identical reports and ledgers.
 
     Raises:
         DataError: on unreadable input, invalid rows, missing anchors, an
@@ -112,7 +116,7 @@ def align_contract(contract: Contract) -> AlignResult:
 
     devices = [series.device_id for _spec, series, _san in loaded]
     if anchors is not None:
-        estimates = estimate_offsets(anchors, devices, contract.clock_skew)
+        estimates = estimate_offsets(anchors, devices, contract.clock_skew, max_workers=max_workers)
     else:
         estimates = {
             device: OffsetEstimate(device, "", "none", "disabled", 0)

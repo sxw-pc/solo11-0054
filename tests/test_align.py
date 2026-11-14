@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
 
+from sensoralign.commands.run import _aligned_rows
 from sensoralign.core.align import align_contract, build_grid
 from sensoralign.core.contract import GridSpec, load_contract
 from sensoralign.core.errors import DataError
 from sensoralign.core.series import SeriesPoint
+from sensoralign.io.ledger import write_run
+from sensoralign.report.json_report import build_report, canonical_json_bytes
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = 1_700_000_000_000_000
@@ -69,6 +73,30 @@ def test_sparse_anchor_reports_warning_without_correction() -> None:
     assert by_id["dev-b2"].sanitized.points[0].ts_us == BASE + 2_000_000
 
 
+def test_parallel_and_serial_alignments_are_identical() -> None:
+    contract = load_contract(ROOT / "fixtures" / "contracts" / "basic.yaml")
+    serial = align_contract(contract, max_workers=1)
+    parallel = align_contract(contract, max_workers=4)
+    assert [estimate.device_id for estimate in parallel.offsets] == [
+        estimate.device_id for estimate in serial.offsets
+    ]
+    assert parallel.offsets == serial.offsets
+    assert parallel.runs == serial.runs
+    assert parallel.events == serial.events
+    assert parallel.grid == serial.grid
+    assert parallel.alignment == serial.alignment
+
+
+def test_parallel_sparse_anchor_keeps_insufficient_status_and_order() -> None:
+    contract = load_contract(ROOT / "fixtures" / "contracts" / "sparse_anchor.yaml")
+    serial = align_contract(contract, max_workers=1)
+    parallel = align_contract(contract, max_workers=4)
+    assert [estimate.device_id for estimate in parallel.offsets] == ["dev-a1", "dev-b2"]
+    assert [estimate.status for estimate in parallel.offsets] == ["reference", "insufficient"]
+    assert parallel.offsets == serial.offsets
+    assert parallel.events == serial.events
+
+
 def test_union_grid_and_failure_modes() -> None:
     first = [SeriesPoint(0, 1.0, 1), SeriesPoint(2, 2.0, 2), SeriesPoint(4, 3.0, 3)]
     second = [SeriesPoint(2, 4.0, 1), SeriesPoint(4, 5.0, 2), SeriesPoint(6, 6.0, 3)]
@@ -82,3 +110,34 @@ def test_union_grid_and_failure_modes() -> None:
     with pytest.raises(DataError) as no_step:
         build_grid(GridSpec("from_union"), [[SeriesPoint(3, 1.0, 1)], [SeriesPoint(3, 2.0, 1)]])
     assert no_step.value.code == "E_GRID_NO_STEP"
+
+
+def test_serial_and_parallel_reports_and_ledgers_are_byte_identical(tmp_path: Path) -> None:
+    contract = load_contract(ROOT / "fixtures" / "contracts" / "basic.yaml")
+    serial_result = align_contract(contract, max_workers=1)
+    parallel_result = align_contract(contract, max_workers=8)
+    serial_report = build_report(serial_result)
+    parallel_report = build_report(parallel_result)
+    assert canonical_json_bytes(parallel_report) == canonical_json_bytes(serial_report)
+    assert [item["device_id"] for item in parallel_report["offsets"]] == [
+        "dev-a1",
+        "dev-b2",
+        "dev-c3",
+        "dev-d4",
+        "dev-e5",
+    ]
+    serial_db = tmp_path / "serial.db"
+    parallel_db = tmp_path / "parallel.db"
+    serial_id = write_run(serial_db, serial_report, _aligned_rows(serial_result))
+    parallel_id = write_run(parallel_db, parallel_report, _aligned_rows(parallel_result))
+    assert parallel_id == serial_id
+
+    def dump(db_path: Path) -> dict[str, list[tuple]]:
+        with sqlite3.connect(db_path) as connection:
+            tables = [row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")]
+            return {
+                table: connection.execute(f"SELECT * FROM {table} ORDER BY 1, 2, 3").fetchall()
+                for table in tables
+            }
+
+    assert dump(parallel_db) == dump(serial_db)

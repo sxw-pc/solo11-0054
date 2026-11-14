@@ -13,6 +13,7 @@ import hashlib
 import math
 import statistics
 from collections.abc import Iterable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -23,6 +24,12 @@ from .series import SeriesPoint
 
 ANCHOR_KEYS = {"version", "reference_device", "events"}
 EVENT_KEYS = {"id", "observations"}
+
+# Default pool size for per-device estimation. Individual devices still run
+# their pairwise-slope traversal in the exact serial order inside ``_estimate_one``;
+# only whole-device tasks are scheduled concurrently, so every float result is
+# bit-identical to the serial implementation.
+DEFAULT_MAX_WORKERS = 8
 
 
 @dataclass(frozen=True)
@@ -128,20 +135,45 @@ def estimate_offsets(
     anchors: AnchorSet,
     devices: Iterable[str],
     clock_skew: str,
+    *,
+    max_workers: int | None = None,
 ) -> dict[str, OffsetEstimate]:
     """Estimate one offset model per input device.
 
     Device order is preserved, with the anchor reference device inserted first
     when it is not itself an input. The returned statuses are ``reference``,
     ``disabled``, ``insufficient``, ``no_anchors``, ``degenerate`` or ``ok``.
+
+    Per-device estimations are independent, so device tasks are scheduled on a
+    thread pool when ``max_workers`` is greater than one (the default). Each
+    device keeps running its own pairwise-slope traversal in the original
+    serial order inside :func:`_estimate_one`; concurrency only spans whole
+    devices. Results are then re-assembled in ``ordered`` sequence, hence the
+    returned dictionary has exactly the same key order -- and every value the
+    same bit pattern -- as a purely serial run. Pass ``max_workers=1`` to force
+    the serial loop, which is also used automatically for a single device.
     """
     ordered: list[str] = []
     for device in [anchors.reference_device, *devices]:
         if device not in ordered:
             ordered.append(device)
+    if max_workers is not None and max_workers < 1:
+        raise ValueError("max_workers must be at least 1")
     estimates: dict[str, OffsetEstimate] = {}
-    for device in ordered:
-        estimates[device] = _estimate_one(anchors, device, clock_skew)
+    if max_workers == 1 or len(ordered) < 2:
+        for device in ordered:
+            estimates[device] = _estimate_one(anchors, device, clock_skew)
+        return estimates
+    workers = DEFAULT_MAX_WORKERS if max_workers is None else max_workers
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        # Submit in contract order and read the futures back in that same
+        # order: completion order of the workers never reaches the dictionary.
+        futures = [
+            executor.submit(_estimate_one, anchors, device, clock_skew)
+            for device in ordered
+        ]
+        for device, future in zip(ordered, futures):
+            estimates[device] = future.result()
     return estimates
 
 
