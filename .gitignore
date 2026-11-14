@@ -2,3 +2,11 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 out/
+.venv/
+venv/
+node_modules/
+*.pyc
+.coverage
+.benchmarks/
+.env
+dist/
