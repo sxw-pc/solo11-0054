@@ -268,8 +268,33 @@ def find_gaps(points: Sequence[SeriesPoint], max_gap_us: int) -> list[Gap]:
     return gaps
 
 
+@dataclass(frozen=True)
+class SourceGridSpan:
+    """Per-source union-grid facts: first point, last point and min positive step."""
+
+    first_ts_us: int
+    last_ts_us: int
+    min_step_us: int | None
+
+
+def reduce_source_grid(points: Sequence[SeriesPoint]) -> SourceGridSpan | None:
+    """Reduce one source to its grid spans in one pass; ``None`` when empty.
+
+    The step is the minimum strictly positive delta and ``None`` when none."""
+    if not points:
+        return None
+    iterator = iter(points)
+    first = last = next(iterator).ts_us
+    min_step: int | None = None
+    for point in iterator:
+        delta = point.ts_us - last
+        if delta > 0 and (min_step is None or delta < min_step):
+            min_step = delta
+        last = point.ts_us
+    return SourceGridSpan(first, last, min_step)
+
 
 def min_interval_us(points: Sequence[SeriesPoint]) -> int | None:
     """Return the minimum positive adjacent interval, or ``None``."""
-    deltas = [right.ts_us - left.ts_us for left, right in zip(points, points[1:]) if right.ts_us > left.ts_us]
-    return min(deltas) if deltas else None
+    span = reduce_source_grid(points)
+    return span.min_step_us if span is not None else None

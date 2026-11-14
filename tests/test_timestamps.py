@@ -7,7 +7,9 @@ from sensoralign.core.series import SeriesPoint
 from sensoralign.core.timestamps import (
     count_inversions,
     find_gaps,
+    min_interval_us,
     parse_ts_us,
+    reduce_source_grid,
     sanitize_points,
 )
 
@@ -110,3 +112,36 @@ def test_huge_gap_uses_integer_microseconds() -> None:
     points = [point(-10**15, 1.0), point(10**15, 2.0)]
     gap = find_gaps(points, 10**6)[0]
     assert gap.duration_us == 2 * 10**15
+
+
+def test_reduce_source_grid_fuses_endpoints_and_positive_step() -> None:
+    points = [point(500, 1.0), point(500, 2.0), point(530, 3.0), point(510, 4.0), point(550, 5.0)]
+    span = reduce_source_grid(points)
+    assert span is not None
+    assert span.first_ts_us == 500
+    assert span.last_ts_us == 550
+    # Only right > left deltas count: 0, 30, -20 and 40 -> minimum positive is 30.
+    assert span.min_step_us == 30
+
+
+def test_reduce_source_grid_empty_and_single_point() -> None:
+    assert reduce_source_grid([]) is None
+    span = reduce_source_grid([point(7, 1.0)])
+    assert span is not None
+    assert (span.first_ts_us, span.last_ts_us, span.min_step_us) == (7, 7, None)
+
+
+def test_reduce_source_grid_ignores_non_positive_intervals() -> None:
+    span = reduce_source_grid([point(100, 1.0), point(100, 2.0), point(90, 3.0)])
+    assert span is not None
+    assert span.min_step_us is None
+
+
+def test_min_interval_us_counts_only_strictly_positive_deltas() -> None:
+    assert min_interval_us([]) is None
+    assert min_interval_us([point(3, 1.0)]) is None
+    assert min_interval_us([point(5, 1.0), point(5, 2.0), point(4, 3.0)]) is None
+    points = [point(100, 1.0), point(100, 2.0), point(104, 3.0), point(90, 4.0), point(110, 5.0)]
+    assert min_interval_us(points) == 4
+    assert min_interval_us(points) == reduce_source_grid(points).min_step_us
+

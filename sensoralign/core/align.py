@@ -28,7 +28,7 @@ from .timestamps import (
     SanitizeResult,
     count_inversions,
     find_gaps,
-    min_interval_us,
+    reduce_source_grid,
     sanitize_points,
 )
 
@@ -184,21 +184,26 @@ def build_grid(grid_spec: GridSpec, corrected_series: Sequence[Sequence[SeriesPo
 
     For ``from_union`` the origin is the latest first observation, the end is
     the earliest last observation, and the step is the minimum positive native
-    interval across all inputs. The stored ``end_us`` is exclusive.
+    interval across all inputs. Each input is reduced exactly once to
+    :class:`SourceGridSpan`; the per-source results are then merged into
+    origin/step/end/count before the tuple is expanded. The stored ``end_us``
+    is exclusive.
     """
     if grid_spec.mode == "from_union":
-        nonempty = [points for points in corrected_series if points]
-        if len(nonempty) != len(corrected_series) or not nonempty:
+        spans = [reduce_source_grid(points) for points in corrected_series]
+        if not spans or any(span is None for span in spans):
             raise DataError("E_GRID_NO_OVERLAP", "from_union requires at least one point in every series")
-        common_start = max(points[0].ts_us for points in nonempty)
-        common_end = min(points[-1].ts_us for points in nonempty)
+        source_spans = [span for span in spans if span is not None]
+        common_start = max(span.first_ts_us for span in source_spans)
+        common_end = min(span.last_ts_us for span in source_spans)
         if common_start > common_end:
             raise DataError("E_GRID_NO_OVERLAP", "input coverage windows do not overlap")
-        intervals = [min_interval_us(points) for points in nonempty]
-        positive = [interval for interval in intervals if interval is not None]
-        if not positive:
+        step: int | None = None
+        for span in source_spans:
+            if span.min_step_us is not None and (step is None or span.min_step_us < step):
+                step = span.min_step_us
+        if step is None:
             raise DataError("E_GRID_NO_STEP", "cannot infer a union-grid step from single-point series")
-        step = min(positive)
         end = common_end + 1
         count = (common_end - common_start) // step + 1
         if count > MAX_GRID_CELLS:
