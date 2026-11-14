@@ -49,6 +49,11 @@ def build_report(result: AlignResult) -> dict[str, Any]:
                     "duplicates_removed": run.sanitized.duplicates_removed,
                     "conflicts": quality.conflict_count,
                 },
+                "arbitration": {
+                    "priority": run.spec.priority,
+                    "merged": run.arbitration.merged,
+                    "dropped": run.arbitration.dropped,
+                },
                 "clock": _clock_dict(run.offset),
                 "quality": {
                     "total_cells": quality.total_cells,

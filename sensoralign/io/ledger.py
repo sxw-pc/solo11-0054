@@ -42,6 +42,8 @@ CREATE TABLE IF NOT EXISTS series (
     sanitized_points INTEGER NOT NULL,
     duplicates_removed INTEGER NOT NULL,
     conflict_count INTEGER NOT NULL,
+    arbitration_merged INTEGER NOT NULL,
+    arbitration_dropped INTEGER NOT NULL,
     clock_status TEXT NOT NULL,
     clock_reference TEXT NOT NULL,
     anchor_count INTEGER NOT NULL,
@@ -115,7 +117,7 @@ def write_run(
                     (run_id, contract_sha, result_sha),
                 )
                 connection.executemany(
-                    "INSERT INTO series VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO series VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     list(_series_rows(run_id, report)),
                 )
                 connection.executemany(
@@ -221,6 +223,8 @@ def _series_rows(run_id: str, report: dict[str, Any]) -> Iterable[Sequence[Any]]
             item["points"]["sanitized"],
             item["points"]["duplicates_removed"],
             item["points"]["conflicts"],
+            item["arbitration"]["merged"],
+            item["arbitration"]["dropped"],
             clock["status"],
             clock["reference_device"],
             clock["anchor_count"],
@@ -254,6 +258,8 @@ def _metric_rows(run_id: str, report: dict[str, Any]) -> Iterable[tuple[Any, ...
         quality = item["quality"]
         for key in ("total_cells", "value_cells", "coverage", "gap_cells", "gap_ratio", "conflict_count", "gap_count", "gap_duration_us"):
             yield (run_id, "series", item["series_id"], key, float(quality[key]), None)
+        for key in ("arbitration_merged", "arbitration_dropped"):
+            yield (run_id, "series", item["series_id"], key, float(item["arbitration"][key.removeprefix("arbitration_")]), None)
         for marker, count in quality["marker_counts"].items():
             yield (run_id, "series", item["series_id"], f"marker.{marker}", float(count), None)
     for ordinal, estimate in enumerate(report["offsets"]):

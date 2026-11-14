@@ -41,6 +41,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     rows = []
     for item in report["series"]:
         quality = item["quality"]
+        arbitration = item.get("arbitration", {"priority": 0, "merged": 0, "dropped": 0})
         markers = ", ".join(f"{key}={quality['marker_counts'].get(key, 0)}" for key in MARKER_ORDER)
         rows.append(
             [
@@ -48,6 +49,9 @@ def render_markdown(report: dict[str, Any]) -> str:
                 item["device_id"],
                 item["metric"],
                 item["strategy"],
+                str(arbitration["priority"]),
+                str(arbitration["merged"]),
+                str(arbitration["dropped"]),
                 _number(quality["coverage"]),
                 _number(quality["gap_ratio"]),
                 str(quality["conflict_count"]),
@@ -57,7 +61,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         )
     lines.extend(
         _table(
-            ["系列", "设备", "物理量", "策略", "覆盖率", "缺口格占比", "冲突", "缺口数", "标记分布"],
+            ["系列", "设备", "物理量", "策略", "优先级", "裁决合并", "裁决丢弃", "覆盖率", "缺口格占比", "冲突", "缺口数", "标记分布"],
             rows,
         )
     )

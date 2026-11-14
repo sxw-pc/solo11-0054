@@ -37,7 +37,7 @@ TOP_LEVEL_KEYS = {
     "resample",
     "gap_report_limit",
 }
-INPUT_KEYS = {"id", "path", "format", "device_id", "metric"}
+INPUT_KEYS = {"id", "path", "format", "device_id", "metric", "priority"}
 NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
 
 
@@ -166,7 +166,8 @@ def _parse_inputs(raw: Any, path: str) -> tuple[InputSpec, ...]:
             fmt = _string(fmt, f"{field}.format", path).lower()
         if fmt not in ("csv", "jsonl"):
             raise ContractError("E_CONTRACT_VALUE", f"unsupported format: {fmt}", path=path, field=f"{field}.format")
-        parsed.append(InputSpec(series_id, raw_path, fmt, device_id, metric))
+        priority = _int(entry.get("priority", 0), f"{field}.priority", path, minimum=0)
+        parsed.append(InputSpec(series_id, raw_path, fmt, device_id, metric, priority))
     return tuple(parsed)
 
 

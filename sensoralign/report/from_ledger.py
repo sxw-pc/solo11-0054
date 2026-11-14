@@ -30,6 +30,7 @@ def rebuild_report(bundle: dict[str, Any]) -> dict[str, Any]:
     metrics = {(row["scope"], row["scope_id"], row["metric_key"]): row for row in bundle["metrics"]}
     snapshot = json.loads(_text(metrics, "contract", "", "snapshot_json"))
     run = bundle["run"]
+    priorities = {item["id"]: item["priority"] for item in snapshot["inputs"]}
     series_reports = []
     for row in bundle["series"]:
         series_id = row["series_id"]
@@ -53,6 +54,11 @@ def rebuild_report(bundle: dict[str, Any]) -> dict[str, Any]:
                     "sanitized": row["sanitized_points"],
                     "duplicates_removed": row["duplicates_removed"],
                     "conflicts": row["conflict_count"],
+                },
+                "arbitration": {
+                    "priority": priorities[series_id],
+                    "merged": row["arbitration_merged"],
+                    "dropped": row["arbitration_dropped"],
                 },
                 "clock": {
                     "status": row["clock_status"],

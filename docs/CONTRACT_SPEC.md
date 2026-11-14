@@ -31,6 +31,7 @@
 | `format` | str | 否 | `csv` 或 `jsonl`；省略时按 `.csv` / `.jsonl` / `.ndjson` 推断。 |
 | `device_id` | str | 是 | 期望设备标识；每一行必须与之相同。 |
 | `metric` | str | 是 | 期望物理量名称；每一行必须与之相同。 |
+| `priority` | int | 否 | 跨输入裁决优先级，非负整数，缺省 `0`（最低）；详见第 4.4 节。 |
 
 一个文件只能包含一个 `(device_id, metric)` 流；混入多流会报
 `E_SERIES_AMBIGUOUS`。输入必填列/字段为 `ts_us`、`device_id`、`metric`、`value`；
@@ -87,6 +88,23 @@ grid: from_union
 对时钟修正并去重后的相邻点，若 `right.ts_us - left.ts_us > max_gap_us`，记录一个
 缺口。缺口在台账中体现为事件，在重采样结果中标记 `in_gap`。网格时刻严格位于
 缺口两端之间时才是 `in_gap`，端点上的真实观测仍为 `ok`。
+
+### 4.4 跨输入裁决
+单流卫生（4.1、4.2）与时钟修正完成后，进入一次独立的跨输入裁决阶段。它只比较
+**不同输入流**之间、同 `device_id`、同 `metric`、且校正后落在**同一微秒**的观测；
+单流 sanitize 已判定的重复与冲突不在此阶段二次改写，也不重复计数。
+
+- 同微秒**不同值**为跨流冲突：`priority` 最大的流胜出并进入后续网格与缺口计算，
+  其余流的该观测被丢弃，每丢弃一个点向**归属该流自身**的 series 写一条
+  `W_ARBITRATION_CONFLICT`。
+- 同微秒**同值**为冗余重复：只保留一条（避免网格重叠），其余每侧向自身 series
+  写一条 `W_ARBITRATION_DUPLICATE`。
+- 未声明 `priority` 的流按 `0`（最低）处理；优先级相同时按契约中的声明顺序，
+  先声明者胜出，因此结果完全确定。
+- 事件的 `series_id`、`path`、`line` 均属于被丢弃的一侧；计数按 series 分别统计
+  （报告 `arbitration.merged` / `arbitration.dropped`），不串流。
+- 被裁决丢弃的点不再参与该流的缺口扫描与重采样；该阶段不修改
+  `duplicates_removed`、`conflicts` 等单流计数。
 
 ## 5. 时钟偏移与漂移
 `anchors` 文件格式：
@@ -181,7 +199,7 @@ resample:
 | 表 | 内容 |
 | --- | --- |
 | `run` | `run_id`、`contract_sha256`、`result_sha256`，不含运行时间戳。 |
-| `series` | 输入路径/格式/SHA-256、点数、去重/冲突、时钟估计、缺口统计。 |
+| `series` | 输入路径/格式/SHA-256、点数、去重/冲突、跨输入裁决合并/丢弃计数、时钟估计、缺口统计。 |
 | `aligned` | 每个 series、每个 grid index 一行：`ts_us`、`value`、`marker`。 |
 | `metrics` | 契约快照、网格、对齐指标、每路质量、偏移指标。 |
 | `errors` | 有序审计事件，含 `W_*` 警告，`detail_json` 保存结构化细节。 |
@@ -264,6 +282,8 @@ resample:
 | `W_OFFSET_INSUFFICIENT` | 锚点不足/无锚点/退化，未应用时钟修正。 |
 | `W_CLOCK_REORDER` | 时钟修正后出现逆序，已稳定排序。 |
 | `W_CLOCK_DUPLICATE_TS` | 时钟修正后时间戳坍缩，保留首点。 |
+| `W_ARBITRATION_CONFLICT` | 跨输入同微秒不同值，本流因优先级较低被丢弃。 |
+| `W_ARBITRATION_DUPLICATE` | 跨输入同微秒同值，本流冗余观测被合并。 |
 
 ## 11. 完整示例
 ```yaml

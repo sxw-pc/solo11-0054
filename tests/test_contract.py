@@ -43,6 +43,45 @@ def test_valid_basic_contract_and_snapshot() -> None:
     assert snapshot["grid"]["mode"] == "explicit"
     assert snapshot["resample"]["overrides"] == {"dev-b2": "step", "dev-c3": "mean"}
     assert "source_path" not in snapshot
+    assert [item["priority"] for item in snapshot["inputs"]] == [0, 0, 0, 0, 0]
+    assert all(spec.priority == 0 for spec in contract.inputs)
+
+
+def test_priority_is_parsed_and_included_in_snapshot(tmp_path: Path) -> None:
+    body = minimal_contract().replace(
+        "    device_id: dev-a1\n    metric: temperature\n",
+        "    device_id: dev-a1\n    metric: temperature\n    priority: 7\n",
+    )
+    contract = load_contract(write_contract(tmp_path, body))
+    assert contract.inputs[0].priority == 7
+    assert contract.snapshot()["inputs"][0]["priority"] == 7
+
+
+def test_priority_rejects_negative_and_non_integer(tmp_path: Path) -> None:
+    negative = minimal_contract().replace(
+        "    device_id: dev-a1\n    metric: temperature\n",
+        "    device_id: dev-a1\n    metric: temperature\n    priority: -1\n",
+    )
+    with pytest.raises(ContractError) as caught:
+        load_contract(write_contract(tmp_path, negative))
+    assert caught.value.code == "E_CONTRACT_VALUE"
+    boolean = minimal_contract().replace(
+        "    device_id: dev-a1\n    metric: temperature\n",
+        "    device_id: dev-a1\n    metric: temperature\n    priority: true\n",
+    )
+    with pytest.raises(ContractError) as caught:
+        load_contract(write_contract(tmp_path, boolean))
+    assert caught.value.code == "E_CONTRACT_TYPE"
+
+
+def test_unknown_input_field_still_rejected(tmp_path: Path) -> None:
+    body = minimal_contract().replace(
+        "    device_id: dev-a1\n    metric: temperature\n",
+        "    device_id: dev-a1\n    metric: temperature\n    rank: 3\n",
+    )
+    with pytest.raises(ContractError) as caught:
+        load_contract(write_contract(tmp_path, body))
+    assert caught.value.code == "E_CONTRACT_UNKNOWN"
 
 
 def test_unknown_top_level_field(tmp_path: Path) -> None:

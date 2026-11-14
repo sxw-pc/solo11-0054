@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..io.loaders import load_series
+from .arbitration import ArbitrationStats, arbitrate_inputs
 from .contract_model import Contract, GridSpec, InputSpec
 from .errors import DataError, Event
 from .offset import OffsetEstimate, correct_points, estimate_offsets, load_anchors
@@ -64,6 +65,7 @@ class SeriesRun:
     strategy: str
     samples: list[Sample]
     quality: SeriesQuality
+    arbitration: ArbitrationStats
 
 
 @dataclass
@@ -139,10 +141,19 @@ def align_contract(contract: Contract) -> AlignResult:
         corrected = _normalize_corrected(corrected, series, events)
         prepared.append((spec, series, sanitized, corrected, estimate))
 
-    grid = build_grid(contract.grid, [corrected for _s, _r, _sa, corrected, _o in prepared])
+    arbitration = arbitrate_inputs(
+        [(index, spec, series, corrected) for index, (spec, series, _san, corrected, _est) in enumerate(prepared)]
+    )
+    events.extend(arbitration.events)
+    arbitrated: list[tuple[InputSpec, Series, SanitizeResult, list[SeriesPoint], OffsetEstimate]] = []
+    for spec, series, sanitized, _corrected, estimate in prepared:
+        surviving = arbitration.points_by_series[series.series_id]
+        arbitrated.append((spec, series, sanitized, surviving, estimate))
+
+    grid = build_grid(contract.grid, [corrected for _s, _r, _sa, corrected, _o in arbitrated])
     runs: list[SeriesRun] = []
     gaps_for_events: list[Event] = []
-    for spec, series, sanitized, corrected, estimate in prepared:
+    for spec, series, sanitized, corrected, estimate in arbitrated:
         gaps = find_gaps(corrected, contract.max_gap_us)
         for gap in gaps:
             gaps_for_events.append(
@@ -166,7 +177,20 @@ def align_contract(contract: Contract) -> AlignResult:
             step_us=grid.step_us,
         )
         quality = compute_series_quality(samples, gaps, sanitized.conflict_count)
-        runs.append(SeriesRun(spec, series, sanitized, corrected, gaps, estimate, strategy, samples, quality))
+        runs.append(
+            SeriesRun(
+                spec,
+                series,
+                sanitized,
+                corrected,
+                gaps,
+                estimate,
+                strategy,
+                samples,
+                quality,
+                arbitration.stats_by_series[series.series_id],
+            )
+        )
     events.extend(gaps_for_events)
     alignment = compute_alignment_quality([run.samples for run in runs], grid.cell_count)
     return AlignResult(

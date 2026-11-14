@@ -9,13 +9,19 @@ from typing import Any
 
 @dataclass(frozen=True)
 class InputSpec:
-    """One named source stream declaration."""
+    """One named source stream declaration.
+
+    ``priority`` ranks the stream in cross-input arbitration: the larger value
+    wins, and undeclared streams sit at the lowest priority (zero). Equal
+    priorities resolve by declaration order.
+    """
 
     series_id: str
     path: str
     format: str
     device_id: str
     metric: str
+    priority: int = 0
 
 
 @dataclass(frozen=True)
@@ -98,6 +104,7 @@ class Contract:
                     "format": item.format,
                     "device_id": item.device_id,
                     "metric": item.metric,
+                    "priority": item.priority,
                 }
                 for item in self.inputs
             ],
