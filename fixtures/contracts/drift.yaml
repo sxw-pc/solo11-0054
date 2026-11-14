@@ -1,0 +1,40 @@
+version: 1
+name: drift
+description: Drift estimation with a grid derived from the common coverage window.
+inputs:
+  - id: dev-a1
+    path: fixtures/series/dev-a1.csv
+    format: csv
+    device_id: dev-a1
+    metric: temperature
+  - id: dev-b2
+    path: fixtures/series/dev-b2.csv
+    format: csv
+    device_id: dev-b2
+    metric: temperature
+  - id: dev-c3
+    path: fixtures/series/dev-c3.jsonl
+    format: jsonl
+    device_id: dev-c3
+    metric: temperature
+  - id: dev-d4
+    path: fixtures/series/dev-d4_dup.csv
+    format: csv
+    device_id: dev-d4
+    metric: temperature
+  - id: dev-e5
+    path: fixtures/series/dev-e5_gap.csv
+    format: csv
+    device_id: dev-e5
+    metric: temperature
+anchors: fixtures/anchor/anchors.yaml
+grid: from_union
+max_gap_us: 5000000
+monotonic_policy: sort_stable
+duplicate_policy: keep_first
+conflict_policy: keep_first
+clock_skew: linear
+resample:
+  default: linear
+  overrides:
+    dev-b2: step

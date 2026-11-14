@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sensoralign"
+version = "0.1.0"
+description = "Offline deterministic multi-sensor time-base alignment"
+requires-python = ">=3.10"
+dependencies = ["PyYAML>=6.0"]
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+include = ["sensoralign*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

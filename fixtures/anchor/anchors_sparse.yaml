@@ -1,0 +1,11 @@
+version: 1
+reference_device: dev-a1
+events:
+  - id: evt-sparse-000
+    observations:
+      dev-a1: 1700000000000000
+      dev-b2: 1700000002000000
+  - id: evt-sparse-010
+    observations:
+      dev-a1: 1700000010000000
+      dev-b2: 1700000012000000

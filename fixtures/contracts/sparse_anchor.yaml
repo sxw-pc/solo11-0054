@@ -1,0 +1,26 @@
+version: 1
+name: sparse-anchor
+description: Constant clock-skew contract with too few anchors for estimation.
+inputs:
+  - id: dev-a1
+    path: fixtures/series/dev-a1.csv
+    format: csv
+    device_id: dev-a1
+    metric: temperature
+  - id: dev-b2
+    path: fixtures/series/dev-b2.csv
+    format: csv
+    device_id: dev-b2
+    metric: temperature
+anchors: fixtures/anchor/anchors_sparse.yaml
+grid:
+  origin_us: 1700000000000000
+  step_us: 2000000
+  end_us: 1700000030000000
+max_gap_us: 3000000
+monotonic_policy: reject
+duplicate_policy: keep_first
+conflict_policy: keep_first
+clock_skew: constant
+resample:
+  default: step
