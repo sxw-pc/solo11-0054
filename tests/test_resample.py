@@ -42,6 +42,61 @@ def test_mean_window_and_no_window() -> None:
     assert samples[4].marker == "no_right"
 
 
+def test_lag_window_odd_step_is_left_closed_right_open() -> None:
+    points = pts((10, 2.0), (14, 4.0), (15, 8.0), (19, 16.0), (20, 32.0))
+    samples = resample_points(
+        points, [15, 20], "lag_window", max_gap_us=100, step_us=5
+    )
+    assert [sample.marker for sample in samples] == ["ok", "ok"]
+    # Window [10, 15) excludes the right edge; a centered odd-step window
+    # would instead include the observation at 15.
+    assert samples[0].value == pytest.approx(3.0)
+    # Window [15, 20) excludes the observation exactly at 20.
+    assert samples[1].value == pytest.approx(12.0)
+
+
+def test_lag_window_marks_windows_before_first_and_after_last() -> None:
+    points = pts((100, 1.0), (105, 3.0))
+    samples = resample_points(
+        points, [90, 100, 105, 110, 120], "lag_window", max_gap_us=100, step_us=10
+    )
+    assert [sample.marker for sample in samples] == [
+        "no_window_lower",
+        "no_window_lower",
+        "ok",
+        "ok",
+        "no_window_upper",
+    ]
+    assert samples[2].value == pytest.approx(1.0)
+    assert samples[3].value == pytest.approx(2.0)
+
+
+def test_lag_window_no_window_between_observation_runs() -> None:
+    points = pts((0, 1.0), (40, 5.0))
+    samples = resample_points(points, [20], "lag_window", max_gap_us=100, step_us=10)
+    assert samples[0].marker == "no_window"
+
+
+def test_lag_window_gap_truncation_beats_window_content() -> None:
+    points = pts((0, 1.0), (10, 2.0), (20, 3.0), (100, 9.0))
+    gaps = find_gaps(points, 50)
+    samples = resample_points(
+        points, [20, 50, 140], "lag_window", max_gap_us=50, gaps=gaps, step_us=30
+    )
+    # Instant 20 is the gap's left edge (not interior): window [-10, 20) has values.
+    assert samples[0].marker == "ok"
+    assert samples[0].value == pytest.approx(1.5)
+    # Instant 50 is inside the gap: in_gap wins over the observation at 20.
+    assert samples[1].marker == "in_gap"
+    # Window [110, 140) lies entirely after the last observation.
+    assert samples[2].marker == "no_window_upper"
+
+
+def test_lag_window_requires_positive_step() -> None:
+    with pytest.raises(ValueError):
+        resample_points(pts((0, 1.0)), [0], "lag_window", max_gap_us=5)
+
+
 def test_empty_and_single_point_series() -> None:
     empty = resample_points([], [0, 10], "linear", max_gap_us=5)
     assert [sample.marker for sample in empty] == ["no_left", "no_left"]

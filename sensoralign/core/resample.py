@@ -1,9 +1,13 @@
 """Grid resampling with explicit, auditable missing-value markers.
 
 Strategies:
-    linear: interpolate only when observations exist on both sides.
-    step:   carry the latest observation at or before the grid instant.
-    mean:   arithmetic mean of observations in a centered one-grid-step window.
+    linear:     interpolate only when observations exist on both sides.
+    step:       carry the latest observation at or before the grid instant.
+    mean:       arithmetic mean of observations in a centered one-grid-step window.
+    lag_window: arithmetic mean over the fixed trailing window
+                ``[instant - step_us, instant)``, whose right edge is aligned to
+                the grid step. Integer bounds keep odd ``step_us`` free of the
+                ``step_us // 2`` asymmetry used by ``mean``.
 
 Large gaps are excluded before any strategy runs. No marker is ever silently
 filled with a synthetic value.
@@ -19,8 +23,16 @@ from dataclasses import dataclass
 from .series import SeriesPoint
 from .timestamps import Gap
 
-MARKER_ORDER = ("ok", "no_left", "no_right", "in_gap", "no_window")
-STRATEGIES = ("linear", "step", "mean")
+MARKER_ORDER = (
+    "ok",
+    "no_left",
+    "no_right",
+    "in_gap",
+    "no_window",
+    "no_window_lower",
+    "no_window_upper",
+)
+STRATEGIES = ("linear", "step", "mean", "lag_window")
 
 
 @dataclass(frozen=True)
@@ -45,21 +57,21 @@ def resample_points(
     Args:
         points: Sanitized, timestamp-unique points in ascending order.
         grid_times: Ascending grid instants in microseconds.
-        strategy: ``linear``, ``step`` or ``mean``.
+        strategy: ``linear``, ``step``, ``mean`` or ``lag_window``.
         max_gap_us: Gap threshold used when ``gaps`` is not supplied.
         gaps: Precomputed gaps; if omitted they are derived from ``points``.
-        step_us: Grid step, required by ``mean`` and used for its window.
+        step_us: Grid step, required by windowed strategies.
 
     Raises:
-        ValueError: for an unknown strategy or a missing/invalid mean window.
+        ValueError: for an unknown strategy or a missing/invalid window step.
 
     Returns:
         One :class:`Sample` per grid instant, in grid order.
     """
     if strategy not in STRATEGIES:
         raise ValueError(f"unknown resampling strategy: {strategy}")
-    if strategy == "mean" and (step_us is None or step_us <= 0):
-        raise ValueError("mean resampling requires a positive step_us")
+    if strategy in ("mean", "lag_window") and (step_us is None or step_us <= 0):
+        raise ValueError(f"{strategy} resampling requires a positive step_us")
     ordered = list(points)
     gap_list = list(gaps) if gaps is not None else _derive_gaps(ordered, max_gap_us)
     stamps = [point.ts_us for point in ordered]
@@ -70,6 +82,8 @@ def resample_points(
     if strategy == "step":
         return [_step(ordered, stamps, instant, gap_list) for instant in grid_times]
     assert step_us is not None
+    if strategy == "lag_window":
+        return [_lag_window(ordered, stamps, instant, gap_list, step_us) for instant in grid_times]
     return [_mean(ordered, stamps, instant, gap_list, step_us) for instant in grid_times]
 
 
@@ -131,6 +145,35 @@ def _mean(
         return Sample(None, "no_left")
     if instant > stamps[-1]:
         return Sample(None, "no_right")
+    return Sample(None, "no_window")
+
+
+def _lag_window(
+    points: Sequence[SeriesPoint],
+    stamps: Sequence[int],
+    instant: int,
+    gaps: Sequence[Gap],
+    step_us: int,
+) -> Sample:
+    """Mean over ``[instant - step_us, instant)`` with integer bounds.
+
+    The right edge is the grid instant itself, so no half-step rounding is
+    involved even for odd ``step_us``. Gap membership of the grid instant is
+    decided before any window content is inspected.
+    """
+    if _inside_gap(gaps, instant):
+        return Sample(None, "in_gap")
+    lower = instant - step_us
+    upper = instant
+    start = bisect.bisect_left(stamps, lower)
+    stop = bisect.bisect_left(stamps, upper)
+    if start < stop:
+        window = [points[index].value for index in range(start, stop)]
+        return Sample(math.fsum(window) / len(window), "ok")
+    if upper <= stamps[0]:
+        return Sample(None, "no_window_lower")
+    if lower > stamps[-1]:
+        return Sample(None, "no_window_upper")
     return Sample(None, "no_window")
 
 

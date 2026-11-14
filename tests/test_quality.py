@@ -35,6 +35,8 @@ def test_marker_distribution_contains_all_markers() -> None:
         "no_right": 0,
         "in_gap": 0,
         "no_window": 0,
+        "no_window_lower": 0,
+        "no_window_upper": 0,
     }
 
 

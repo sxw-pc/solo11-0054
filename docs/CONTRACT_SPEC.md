@@ -138,17 +138,21 @@ resample:
     dev-c3: mean
 ```
 
-`default` 和每个 `overrides` 值只能是 `linear`、`step`、`mean`。`overrides`
-的键必须是已声明的 series id，否则报 `E_CONTRACT_VALUE`。
+`default` 和每个 `overrides` 值只能是 `linear`、`step`、`mean`、`lag_window`。
+`overrides` 的键必须是已声明的 series id，否则报 `E_CONTRACT_VALUE`。
 
 | 策略 | 语义 | 标记 |
 | --- | --- | --- |
 | `linear` | 网格时刻恰有观测则取值；否则左右都有观测才线性插值。 | 缺左侧 `no_left`，缺右侧 `no_right`，横跨大缺口 `in_gap`。 |
 | `step` | 取时间戳 `<=` 网格时刻的最近观测；之后持续保持。 | 首点之前 `no_left`，缺口内部 `in_gap`。 |
 | `mean` | 取窗口内观测的算术平均。窗口为 `[t - step//2, t + (step - step//2))`，宽度等于网格步长。 | 窗口无点且位于数据范围中间 `no_window`；范围外 `no_left` / `no_right`；缺口内部 `in_gap`。 |
+| `lag_window` | 取固定滞后窗口 `[t - step_us, t)` 内观测的算术平均。右端对齐网格时刻，整数微秒边界直接用 `bisect` 落在左闭右开区间，奇数 `step_us` 不引入 `step//2` 的非对称偏差。 | 窗口整体位于首观测之前 `no_window_lower`；整体位于末观测之后 `no_window_upper`；夹在两段观测之间但无命中 `no_window`；缺口内部 `in_gap`（gap 截断优先于窗口内容判定）。 |
 
-标记集合固定为 `ok`、`no_left`、`no_right`、`in_gap`、`no_window`，计数顺序固定。
-`ok` 才写入数值；其他标记的 `value` 为 `NULL`。不允许静默填充。
+标记集合固定为 `ok`、`no_left`、`no_right`、`in_gap`、`no_window`、
+`no_window_lower`、`no_window_upper`，计数顺序固定；零值标记仍出现在计数中。
+`no_window_lower` / `no_window_upper` 仅由 `lag_window` 产生，不改变
+`ok` / `in_gap` 的既有含义。`ok` 才写入数值；其他标记的 `value` 为 `NULL`。
+不允许静默填充。
 
 ## 7. 质量指标
 每路：
@@ -156,7 +160,7 @@ resample:
 - `total_cells`、`value_cells`、`coverage = value_cells / total_cells`（6 位小数）。
 - `gap_cells`、`gap_ratio = gap_cells / total_cells`。
 - `conflict_count`、`gap_count`、`gap_duration_us`。
-- `marker_counts`，包含五种标记的零值。
+- `marker_counts`，包含全部标记的零值。
 
 跨路：
 

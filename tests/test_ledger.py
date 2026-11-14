@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from sensoralign.commands.run import execute_contract
+from sensoralign.core.resample import MARKER_ORDER
 from sensoralign.io.ledger import SCHEMA_TABLES, list_tables, read_run_bundle
 from sensoralign.report.from_ledger import load_report_from_db
 from sensoralign.report.json_report import canonical_json_bytes
@@ -90,3 +91,34 @@ def test_rewriting_same_run_is_idempotent(execution) -> None:
     bundle = read_run_bundle(execution.db_path, first_id)
     assert bundle["aligned_count"] == 300
     assert bundle["run"]["run_id"] == first_id
+
+
+def test_ledger_freezes_extended_marker_order(tmp_path: Path) -> None:
+    contract = tmp_path / "lag.yaml"
+    contract.write_text(
+        f"""version: 1
+name: lag
+inputs:
+  - id: dev-a1
+    path: {(ROOT / "fixtures" / "series" / "dev-a1.csv").as_posix()}
+    format: csv
+    device_id: dev-a1
+    metric: temperature
+grid:
+  origin_us: 1699999999000000
+  step_us: 1000000
+  end_us: 1700000003000000
+resample:
+  default: lag_window
+""",
+        encoding="utf-8",
+    )
+    execution = execute_contract(contract, tmp_path / "out")
+    rebuilt = load_report_from_db(execution.db_path)
+    assert canonical_json_bytes(rebuilt) == execution.json_path.read_bytes()
+    marker_counts = rebuilt["series"][0]["quality"]["marker_counts"]
+    assert tuple(marker_counts) == MARKER_ORDER
+    assert marker_counts["no_window_lower"] == 2
+    assert marker_counts["no_window_upper"] == 0
+    assert marker_counts["no_left"] == 0
+    assert marker_counts["ok"] == 2

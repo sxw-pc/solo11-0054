@@ -20,7 +20,7 @@ from .timestamps import CONFLICT_POLICIES, DUPLICATE_POLICIES, MONOTONIC_POLICIE
 
 __all__ = ["Contract", "GridSpec", "InputSpec", "ResampleSpec", "find_project_root", "load_contract"]
 
-STRATEGIES = ("linear", "step", "mean")
+STRATEGIES = ("linear", "step", "mean", "lag_window")
 CLOCK_MODELS = ("none", "constant", "linear")
 TOP_LEVEL_KEYS = {
     "version",

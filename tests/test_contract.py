@@ -93,6 +93,19 @@ resample:
     assert caught.value.code == "E_CONTRACT_VALUE"
 
 
+def test_lag_window_strategy_is_accepted(tmp_path: Path) -> None:
+    body = minimal_contract() + """
+resample:
+  default: lag_window
+  overrides:
+    a1: lag_window
+"""
+    contract = load_contract(write_contract(tmp_path, body))
+    assert contract.resample.default == "lag_window"
+    assert contract.resample.strategy_for("a1") == "lag_window"
+    assert contract.snapshot()["resample"]["default"] == "lag_window"
+
+
 def test_clock_model_requires_anchors(tmp_path: Path) -> None:
     body = minimal_contract() + "clock_skew: linear\n"
     with pytest.raises(ContractError) as caught:
