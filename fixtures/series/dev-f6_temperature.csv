@@ -1,0 +1,4 @@
+ts_us,device_id,metric,value
+1700000002000000,dev-f6,temperature,30.0
+1700000003000000,dev-f6,temperature,30.1
+1700000004000000,dev-f6,temperature,30.2

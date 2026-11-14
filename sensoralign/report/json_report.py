@@ -13,6 +13,7 @@ from typing import Any
 
 from .. import SCHEMA_VERSION
 from ..core.align import AlignResult
+from ..core.device_view import device_records
 from ..core.offset import OffsetEstimate
 
 
@@ -81,6 +82,7 @@ def build_report(result: AlignResult) -> dict[str, Any]:
             "cell_count": result.grid.cell_count,
         },
         "series": series_reports,
+        "devices": device_records(result.devices),
         "alignment": {
             "total_cells": alignment.total_cells,
             "common_cells": alignment.common_cells,

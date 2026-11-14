@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import SCHEMA_VERSION
+from ..core.device_view import build_views_from_ledger, device_records
 from ..core.errors import LedgerError
 from ..core.resample import MARKER_ORDER
 from ..io.ledger import read_run_bundle
@@ -77,6 +78,8 @@ def rebuild_report(bundle: dict[str, Any]) -> dict[str, Any]:
             }
         )
     errors = [_error_record(row) for row in bundle["errors"]]
+    cell_count = _int_metric(metrics, "grid", "", "cell_count")
+    views = build_views_from_ledger(bundle["series"], bundle.get("aligned", ()), cell_count)
     gaps = [
         {
             "series_id": event["series_id"],
@@ -104,6 +107,7 @@ def rebuild_report(bundle: dict[str, Any]) -> dict[str, Any]:
             "cell_count": _int_metric(metrics, "grid", "", "cell_count"),
         },
         "series": series_reports,
+        "devices": device_records(views),
         "alignment": {
             "total_cells": _int_metric(metrics, "alignment", "", "total_cells"),
             "common_cells": _int_metric(metrics, "alignment", "", "common_cells"),

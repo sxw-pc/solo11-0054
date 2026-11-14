@@ -164,7 +164,23 @@ resample:
 - `missing_any_cells`：至少一路非 `ok` 的格数。
 - `completion_rate = common_cells / total_cells`。
 
+注意：`completion_rate` 始终按**每个 series 是否都有值**统计，与设备宽表无关；
+把同一设备的多个 metric 合并成宽表行不会改变该值。
+
 空网格或零分母返回 `0.0`，不抛除零错误。
+
+### 7.1 设备宽表
+
+报告中的 `devices` 是按 `device_id` 聚合的视图，与 `series` 平铺表并存：
+
+- 每个设备有 `columns`，列出该设备声明的每个 metric：`key`、`metric`、`series_id`、`strategy`。
+- `cells` 与 `grid` 逐格对齐：`grid_index`、`ts_us`、`values`、`markers`。
+- `values` 和 `markers` 都是以 column `key` 为键的映射。某 metric 在该格无观测时，
+  `values[key]` 为 `null`，`markers[key]` 沿用原有的 `ok` / `no_left` / `no_right` /
+  `in_gap` / `no_window`，不会产生空字符串或新造填充值。
+- 同一设备重复声明同名 metric 时，列键为 `metric@series_id`，避免覆盖。
+- 宽表是从账本 `series` + `aligned` 行重放出来的纯视图，不新增台账表，也不改变 `aligned`
+  的每 series/每格一行结构。
 
 ## 8. 报告与台账
 `run` 生成：
@@ -185,6 +201,9 @@ resample:
 | `aligned` | 每个 series、每个 grid index 一行：`ts_us`、`value`、`marker`。 |
 | `metrics` | 契约快照、网格、对齐指标、每路质量、偏移指标。 |
 | `errors` | 有序审计事件，含 `W_*` 警告，`detail_json` 保存结构化细节。 |
+
+报告中的设备宽表（`devices`）由 `series` 与 `aligned` 重建，不占用额外表；
+`report --format json` 重放结果与 `run` 生成的 JSON 字节一致。
 
 ## 9. 退出码
 | 退出码 | 含义 |

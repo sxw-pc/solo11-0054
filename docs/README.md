@@ -83,6 +83,7 @@ resample:
 | `fixtures/contracts/drift.yaml` | 线性漂移 + `grid: from_union` |
 | `fixtures/contracts/gap_policy.yaml` | 缺口阈值与 step 策略 |
 | `fixtures/contracts/sparse_anchor.yaml` | 锚点不足，不执行时钟修正 |
+| `fixtures/contracts/multimetric.yaml` | 单设备两个 metric、覆盖区间不同，演示设备宽表。 |
 
 `basic` 的固定结果便于端到端断言：60 个网格格、5 路序列、公共有值格 42、
 对齐完成率 0.700000；`dev-d4` 去除 1 个重复点并记录 1 个冲突；
@@ -115,6 +116,7 @@ Markdown 报告包含项目摘要、契约快照、每路质量表、时钟偏�
 
 SQLite 台账固定包含五张表：`run`、`series`、`aligned`、`metrics`、`errors`。
 `aligned` 每个系列每格一行，保存 `grid_index`、`ts_us`、`value`、`marker`。
+报告另有 `devices` 设备宽表：每个 `device_id` 一行轴、`grid_index` 为格，按 metric 列出 `values` 与 `markers`；某 metric 缺观测时 value 为 `null`，marker 沿用 `no_left`/`in_gap` 等既有语义。
 
 ## 确定性与脱敏
 - 时间戳与网格全部使用整数微秒，不参与浮点比较。

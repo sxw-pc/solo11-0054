@@ -61,6 +61,28 @@ def render_markdown(report: dict[str, Any]) -> str:
             rows,
         )
     )
+    lines.extend(["", "## 设备宽表", ""])
+    device_sections: list[str] = []
+    for device in report.get("devices", []):
+        keys = [column["key"] for column in device["columns"]]
+        if not keys:
+            continue
+        device_sections.append(f"### `{device['device_id']}`")
+        device_sections.append("")
+        headers = ["#", "ts_us"]
+        for key in keys:
+            headers.extend([f"{key} 值", f"{key} 标记"])
+        device_rows = []
+        for cell in device["cells"]:
+            row = [str(cell["grid_index"]), str(cell["ts_us"])]
+            for key in keys:
+                marker = cell["markers"][key]
+                value = _optional_number(cell["values"][key]) if marker == "ok" else "-"
+                row.extend([value, marker])
+            device_rows.append(row)
+        device_sections.extend(_table(headers, device_rows))
+        device_sections.append("")
+    lines.extend(device_sections or ["无。", ""])
     lines.extend(["", "## 时钟偏移估计", ""])
     offset_rows = []
     for estimate in report["offsets"]:

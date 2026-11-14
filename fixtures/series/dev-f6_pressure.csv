@@ -1,0 +1,5 @@
+ts_us,device_id,metric,value
+1700000000000000,dev-f6,pressure,101.0
+1700000001000000,dev-f6,pressure,101.1
+1700000002000000,dev-f6,pressure,101.2
+1700000005000000,dev-f6,pressure,101.3

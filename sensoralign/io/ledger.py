@@ -179,6 +179,14 @@ def read_run_bundle(db_path: Path, run_id: str | None = None) -> dict[str, Any]:
             "metrics": [dict(row) for row in connection.execute("SELECT * FROM metrics WHERE run_id = ?", (selected,))],
             "errors": [dict(row) for row in connection.execute("SELECT * FROM errors WHERE run_id = ? ORDER BY seq", (selected,))],
             "aligned_count": connection.execute("SELECT COUNT(*) FROM aligned WHERE run_id = ?", (selected,)).fetchone()[0],
+            "aligned": [
+                dict(row)
+                for row in connection.execute(
+                    "SELECT series_id, grid_index, ts_us, value, marker FROM aligned WHERE run_id = ? "
+                    "ORDER BY series_id, grid_index",
+                    (selected,),
+                )
+            ],
         }
         return bundle
     except sqlite3.Error as exc:

@@ -1,0 +1,21 @@
+version: 1
+name: multimetric
+description: One device with two metrics covering different intervals.
+inputs:
+  - id: dev-f6-temperature
+    path: fixtures/series/dev-f6_temperature.csv
+    format: csv
+    device_id: dev-f6
+    metric: temperature
+  - id: dev-f6-pressure
+    path: fixtures/series/dev-f6_pressure.csv
+    format: csv
+    device_id: dev-f6
+    metric: pressure
+grid:
+  origin_us: 1700000000000000
+  step_us: 1000000
+  end_us: 1700000006000000
+max_gap_us: 2500000
+resample:
+  default: linear

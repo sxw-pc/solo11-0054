@@ -13,6 +13,7 @@ from pathlib import Path
 
 from ..io.loaders import load_series
 from .contract_model import Contract, GridSpec, InputSpec
+from .device_view import DeviceView, build_device_views
 from .errors import DataError, Event
 from .offset import OffsetEstimate, correct_points, estimate_offsets, load_anchors
 from .quality import (
@@ -76,6 +77,7 @@ class AlignResult:
     alignment: AlignmentQuality
     offsets: tuple[OffsetEstimate, ...]
     events: list[Event]
+    devices: tuple[DeviceView, ...] = ()
 
 
 def align_contract(contract: Contract) -> AlignResult:
@@ -176,6 +178,7 @@ def align_contract(contract: Contract) -> AlignResult:
         alignment=alignment,
         offsets=tuple(estimates.values()),
         events=events,
+        devices=build_device_views(runs, grid),
     )
 
 
