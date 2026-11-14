@@ -14,6 +14,7 @@ from .. import SCHEMA_VERSION
 from ..core.errors import LedgerError
 from ..core.resample import MARKER_ORDER
 from ..io.ledger import read_run_bundle
+from .window_rebuild import WindowRebuilder
 
 
 def load_report_from_db(db_path: Path, run_id: str | None = None) -> dict[str, Any]:
@@ -30,6 +31,7 @@ def rebuild_report(bundle: dict[str, Any]) -> dict[str, Any]:
     metrics = {(row["scope"], row["scope_id"], row["metric_key"]): row for row in bundle["metrics"]}
     snapshot = json.loads(_text(metrics, "contract", "", "snapshot_json"))
     run = bundle["run"]
+    fallback = WindowRebuilder(bundle, snapshot, metrics)
     series_reports = []
     for row in bundle["series"]:
         series_id = row["series_id"]
@@ -37,8 +39,7 @@ def rebuild_report(bundle: dict[str, Any]) -> dict[str, Any]:
             marker: _int_metric(metrics, "series", series_id, f"marker.{marker}")
             for marker in MARKER_ORDER
         }
-        series_reports.append(
-            {
+        series_reports.append(            {
                 "series_id": series_id,
                 "device_id": row["device_id"],
                 "metric": row["metric"],
@@ -73,6 +74,7 @@ def rebuild_report(bundle: dict[str, Any]) -> dict[str, Any]:
                     "gap_count": _int_metric(metrics, "series", series_id, "gap_count"),
                     "gap_duration_us": _int_metric(metrics, "series", series_id, "gap_duration_us"),
                     "marker_counts": marker_counts,
+                    **fallback.series_window(series_id),
                 },
             }
         )
@@ -109,12 +111,12 @@ def rebuild_report(bundle: dict[str, Any]) -> dict[str, Any]:
             "common_cells": _int_metric(metrics, "alignment", "", "common_cells"),
             "missing_any_cells": _int_metric(metrics, "alignment", "", "missing_any_cells"),
             "completion_rate": _float_metric(metrics, "alignment", "", "completion_rate"),
+            **fallback.alignment_window(),
         },
         "offsets": _offsets(metrics),
         "gaps": gaps,
         "errors": errors,
     }
-
 
 def _offsets(metrics: dict[tuple[str, str, str], Any]) -> list[dict[str, Any]]:
     grouped: dict[str, dict[str, Any]] = {}

@@ -28,6 +28,9 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- 系列数：{len(report['series'])}",
         f"- 公共有值格：{alignment['common_cells']}；任一路缺失：{alignment['missing_any_cells']}",
         f"- 对齐完成率：{_number(alignment['completion_rate'])}",
+        f"- 主窗口交集：{_window(alignment['intersection_start_us'], alignment['intersection_end_us'])}；"
+        f"交集格数：{alignment['intersection_cells']}；"
+        f"交集完成率：{_number(alignment['intersection_completion_rate'])}",
         "",
         "## 契约快照",
         "",
@@ -53,13 +56,26 @@ def render_markdown(report: dict[str, Any]) -> str:
                 str(quality["conflict_count"]),
                 str(quality["gap_count"]),
                 markers,
+                _window(quality["main_window_start_us"], quality["main_window_end_us"]),
+                str(quality["main_window_span_us"]),
+                _number(quality["main_window_coverage"]),
             ]
         )
     lines.extend(
         _table(
-            ["系列", "设备", "物理量", "策略", "覆盖率", "缺口格占比", "冲突", "缺口数", "标记分布"],
+            [
+                "系列", "设备", "物理量", "策略", "覆盖率", "缺口格占比", "冲突", "缺口数", "标记分布",
+                "主窗口", "主窗口跨度 µs", "主窗口覆盖率",
+            ],
             rows,
         )
+    )
+    lines.extend(
+        [
+            "",
+            "- 主窗口取首个到末个 `ok` 格；`in_gap` 计入窗口分母，边缘 `no_left` / `no_right` 不计为端点。",
+            "- 交集为空时，交集完成率按 `0.000000` 报告。",
+        ]
     )
     lines.extend(["", "## 时钟偏移估计", ""])
     offset_rows = []
@@ -150,3 +166,9 @@ def _optional_number(value: float | None) -> str:
 
 def _optional_int(value: int | None) -> str:
     return "-" if value is None else str(value)
+
+
+def _window(start_us: int | None, end_us: int | None) -> str:
+    if start_us is None or end_us is None:
+        return "-"
+    return f"{start_us} ~ {end_us}"

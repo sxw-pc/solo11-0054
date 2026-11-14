@@ -7,11 +7,28 @@ from pathlib import Path
 import pytest
 
 from sensoralign.commands.run import execute_contract
+from sensoralign.core.contract import load_contract
+from sensoralign.core.align import align_contract
 from sensoralign.io.ledger import SCHEMA_TABLES, list_tables, read_run_bundle
 from sensoralign.report.from_ledger import load_report_from_db
-from sensoralign.report.json_report import canonical_json_bytes
+from sensoralign.report.json_report import build_report, canonical_json_bytes
 
 ROOT = Path(__file__).resolve().parents[1]
+WINDOW_KEYS = (
+    "main_window_start_us",
+    "main_window_end_us",
+    "main_window_span_us",
+    "main_window_cells",
+    "main_window_value_cells",
+    "main_window_coverage",
+)
+INTERSECTION_KEYS = (
+    "intersection_start_us",
+    "intersection_end_us",
+    "intersection_cells",
+    "intersection_common_cells",
+    "intersection_completion_rate",
+)
 
 
 @pytest.fixture(scope="module")
@@ -90,3 +107,64 @@ def test_rewriting_same_run_is_idempotent(execution) -> None:
     bundle = read_run_bundle(execution.db_path, first_id)
     assert bundle["aligned_count"] == 300
     assert bundle["run"]["run_id"] == first_id
+    assert "aligned" not in bundle
+
+
+def test_window_metrics_are_stored_in_both_scopes(execution) -> None:
+    with sqlite3.connect(execution.db_path) as connection:
+        series_keys = {
+            row[0]
+            for row in connection.execute(
+                "SELECT metric_key FROM metrics WHERE scope = 'series' AND scope_id = 'dev-e5'"
+            )
+        }
+        alignment_keys = {
+            row[0]
+            for row in connection.execute(
+                "SELECT metric_key FROM metrics WHERE scope = 'alignment'"
+            )
+        }
+    assert set(WINDOW_KEYS) <= series_keys
+    assert set(INTERSECTION_KEYS) <= alignment_keys
+    report = load_report_from_db(execution.db_path)
+    assert report["alignment"]["intersection_completion_rate"] == pytest.approx(42 / 51, abs=1e-6)
+
+
+def test_old_ledger_without_window_keys_is_rebuilt_from_aligned(execution, tmp_path: Path) -> None:
+    old_db = tmp_path / "old.db"
+    old_db.write_bytes(execution.db_path.read_bytes())
+    with sqlite3.connect(old_db) as connection:
+        connection.execute(
+            "DELETE FROM metrics WHERE metric_key IN ({})".format(
+                ",".join("?" for _ in (*WINDOW_KEYS, *INTERSECTION_KEYS))
+            ),
+            (*WINDOW_KEYS, *INTERSECTION_KEYS),
+        )
+        connection.commit()
+    bundle = read_run_bundle(old_db)
+    assert "aligned" in bundle
+    rebuilt = load_report_from_db(old_db)
+    assert canonical_json_bytes(rebuilt) == execution.json_path.read_bytes()
+
+
+def test_window_intersection_fixture_crosses_windows(tmp_path: Path) -> None:
+    result = align_contract(load_contract(ROOT / "fixtures" / "contracts" / "window_intersection.yaml"))
+    report = build_report(result)
+    by_id = {item["series_id"]: item["quality"] for item in report["series"]}
+    assert by_id["dev-w1"]["main_window_start_us"] == 0
+    assert by_id["dev-w1"]["main_window_end_us"] == 40
+    assert by_id["dev-w2"]["main_window_start_us"] == 50
+    assert by_id["dev-w2"]["main_window_end_us"] == 90
+    alignment = report["alignment"]
+    assert alignment["intersection_start_us"] == 50
+    assert alignment["intersection_end_us"] == 40
+    assert alignment["intersection_cells"] == 0
+    assert alignment["intersection_completion_rate"] == 0.0
+
+    execution = execute_contract(
+        ROOT / "fixtures" / "contracts" / "window_intersection.yaml",
+        tmp_path,
+        db_name="windows.db",
+        artifact_prefix="windows",
+    )
+    assert canonical_json_bytes(load_report_from_db(execution.db_path)) == execution.json_path.read_bytes()

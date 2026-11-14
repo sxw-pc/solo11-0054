@@ -1,0 +1,6 @@
+ts_us,device_id,metric,value
+50,dev-w2,temperature,20.0
+60,dev-w2,temperature,20.1
+70,dev-w2,temperature,20.2
+80,dev-w2,temperature,20.3
+90,dev-w2,temperature,20.4

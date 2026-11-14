@@ -60,6 +60,7 @@ class Contract:
     clock_skew: str
     resample: ResampleSpec
     gap_report_limit: int
+    coverage_window_us: int | None
     source_path: Path
     source_sha256: str
     source_dir: Path
@@ -87,7 +88,7 @@ class Contract:
                 "step_us": self.grid.step_us,
                 "end_us": self.grid.end_us,
             }
-        return {
+        snapshot: dict[str, Any] = {
             "version": self.version,
             "name": self.name,
             "description": self.description,
@@ -114,3 +115,6 @@ class Contract:
             },
             "gap_report_limit": self.gap_report_limit,
         }
+        if self.coverage_window_us is not None:
+            snapshot["coverage_window_us"] = self.coverage_window_us
+        return snapshot

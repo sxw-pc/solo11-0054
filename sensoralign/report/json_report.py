@@ -60,6 +60,12 @@ def build_report(result: AlignResult) -> dict[str, Any]:
                     "gap_count": quality.gap_count,
                     "gap_duration_us": quality.gap_duration_us,
                     "marker_counts": dict(quality.marker_counts),
+                    "main_window_start_us": quality.main_window_start_us,
+                    "main_window_end_us": quality.main_window_end_us,
+                    "main_window_span_us": quality.main_window_span_us,
+                    "main_window_cells": quality.main_window_cells,
+                    "main_window_value_cells": quality.main_window_value_cells,
+                    "main_window_coverage": quality.main_window_coverage,
                 },
             }
         )
@@ -86,6 +92,11 @@ def build_report(result: AlignResult) -> dict[str, Any]:
             "common_cells": alignment.common_cells,
             "missing_any_cells": alignment.missing_any_cells,
             "completion_rate": alignment.completion_rate,
+            "intersection_start_us": alignment.intersection_start_us,
+            "intersection_end_us": alignment.intersection_end_us,
+            "intersection_cells": alignment.intersection_cells,
+            "intersection_common_cells": alignment.intersection_common_cells,
+            "intersection_completion_rate": alignment.intersection_completion_rate,
         },
         "offsets": [
             {"device_id": estimate.device_id, **_clock_dict(estimate)}

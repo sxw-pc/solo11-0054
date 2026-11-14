@@ -36,6 +36,7 @@ TOP_LEVEL_KEYS = {
     "clock_skew",
     "resample",
     "gap_report_limit",
+    "coverage_window_us",
 }
 INPUT_KEYS = {"id", "path", "format", "device_id", "metric"}
 NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
@@ -115,6 +116,7 @@ def load_contract(path: Path) -> Contract:
         )
     resample = _parse_resample(document.get("resample"), seen_ids, shown)
     gap_report_limit = _int(document.get("gap_report_limit", 20), "gap_report_limit", shown, minimum=1)
+    coverage_window_us = _optional_positive_int(document.get("coverage_window_us"), "coverage_window_us", shown)
 
     root = find_project_root(path)
     return Contract(
@@ -131,6 +133,7 @@ def load_contract(path: Path) -> Contract:
         clock_skew=clock_skew,
         resample=resample,
         gap_report_limit=gap_report_limit,
+        coverage_window_us=coverage_window_us,
         source_path=path.resolve(),
         source_sha256=hashlib.sha256(raw).hexdigest(),
         source_dir=path.resolve().parent,
@@ -222,6 +225,12 @@ def _int(raw: Any, field: str, path: str, minimum: int | None = None) -> int:
     if minimum is not None and value < minimum:
         raise ContractError("E_CONTRACT_VALUE", f"{field} must be >= {minimum}", path=path, field=field)
     return value
+
+
+def _optional_positive_int(raw: Any, field: str, path: str) -> int | None:
+    if raw is None:
+        return None
+    return _int(raw, field, path, minimum=1)
 
 
 def _string(raw: Any, field: str, path: str) -> str:

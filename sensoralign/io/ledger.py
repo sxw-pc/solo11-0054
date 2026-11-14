@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core.errors import LedgerError
+from ..core.quality import ALIGNMENT_WINDOW_METRICS, SERIES_WINDOW_METRICS
 from ..report.json_report import report_sha256, run_id_for
 
 SCHEMA_TABLES = ("run", "series", "aligned", "metrics", "errors")
@@ -180,6 +181,10 @@ def read_run_bundle(db_path: Path, run_id: str | None = None) -> dict[str, Any]:
             "errors": [dict(row) for row in connection.execute("SELECT * FROM errors WHERE run_id = ? ORDER BY seq", (selected,))],
             "aligned_count": connection.execute("SELECT COUNT(*) FROM aligned WHERE run_id = ?", (selected,)).fetchone()[0],
         }
+        if not _has_window_metrics(bundle["metrics"]):
+            bundle["aligned"] = [dict(row) for row in connection.execute(
+                "SELECT series_id, grid_index, ts_us, marker FROM aligned "
+                "WHERE run_id = ? ORDER BY series_id, grid_index", (selected,))]
         return bundle
     except sqlite3.Error as exc:
         raise LedgerError("E_LEDGER_READ", f"cannot read ledger: {exc}", path=db_path.name) from exc
@@ -201,6 +206,11 @@ def _open(db_path: Path) -> sqlite3.Connection:
         connection.close()
         raise LedgerError("E_LEDGER_CORRUPT", f"ledger is missing table: {missing[0]}", path=db_path.name)
     return connection
+
+
+def _has_window_metrics(rows: Sequence[dict[str, Any]]) -> bool:
+    keys = {(row["scope"], row["metric_key"]) for row in rows}
+    return all((scope, key) in keys for scope, keys_ in (("series", SERIES_WINDOW_METRICS), ("alignment", ALIGNMENT_WINDOW_METRICS)) for key in keys_)
 
 
 def _series_rows(run_id: str, report: dict[str, Any]) -> Iterable[Sequence[Any]]:
@@ -250,10 +260,16 @@ def _metric_rows(run_id: str, report: dict[str, Any]) -> Iterable[tuple[Any, ...
     yield (run_id, "grid", "", "mode", None, grid["mode"])
     for key in ("total_cells", "common_cells", "missing_any_cells", "completion_rate"):
         yield (run_id, "alignment", "", key, float(alignment[key]), None)
+    for key in ALIGNMENT_WINDOW_METRICS:
+        value = alignment[key]
+        yield (run_id, "alignment", "", key, None if value is None else float(value), None)
     for item in report["series"]:
         quality = item["quality"]
         for key in ("total_cells", "value_cells", "coverage", "gap_cells", "gap_ratio", "conflict_count", "gap_count", "gap_duration_us"):
             yield (run_id, "series", item["series_id"], key, float(quality[key]), None)
+        for key in SERIES_WINDOW_METRICS:
+            value = quality[key]
+            yield (run_id, "series", item["series_id"], key, None if value is None else float(value), None)
         for marker, count in quality["marker_counts"].items():
             yield (run_id, "series", item["series_id"], f"marker.{marker}", float(count), None)
     for ordinal, estimate in enumerate(report["offsets"]):

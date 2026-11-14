@@ -1,0 +1,26 @@
+version: 1
+name: window-intersection
+description: Crossing main windows; one window starts on the first ok cell, the other lies after the gap.
+inputs:
+  - id: dev-w1
+    path: fixtures/series/window_early.csv
+    format: csv
+    device_id: dev-w1
+    metric: temperature
+  - id: dev-w2
+    path: fixtures/series/window_late.csv
+    format: csv
+    device_id: dev-w2
+    metric: temperature
+grid:
+  origin_us: 0
+  step_us: 10
+  end_us: 100
+max_gap_us: 25
+monotonic_policy: reject
+duplicate_policy: keep_first
+conflict_policy: keep_first
+clock_skew: none
+resample:
+  default: linear
+gap_report_limit: 20

@@ -165,10 +165,21 @@ def align_contract(contract: Contract) -> AlignResult:
             gaps=gaps,
             step_us=grid.step_us,
         )
-        quality = compute_series_quality(samples, gaps, sanitized.conflict_count)
+        quality = compute_series_quality(
+            samples,
+            gaps,
+            sanitized.conflict_count,
+            coverage_window_us=contract.coverage_window_us,
+            grid_times=grid.times,
+        )
         runs.append(SeriesRun(spec, series, sanitized, corrected, gaps, estimate, strategy, samples, quality))
     events.extend(gaps_for_events)
-    alignment = compute_alignment_quality([run.samples for run in runs], grid.cell_count)
+    alignment = compute_alignment_quality(
+        [run.samples for run in runs],
+        grid.cell_count,
+        coverage_window_us=contract.coverage_window_us,
+        grid_times=grid.times,
+    )
     return AlignResult(
         contract=contract,
         grid=grid,

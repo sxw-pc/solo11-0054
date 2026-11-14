@@ -105,3 +105,26 @@ def test_invalid_yaml_is_coded(tmp_path: Path) -> None:
     with pytest.raises(ContractError) as caught:
         load_contract(write_contract(tmp_path, "version: [unterminated\n"))
     assert caught.value.code == "E_CONTRACT_YAML"
+
+
+def test_coverage_window_is_optional_and_snapshotted(tmp_path: Path) -> None:
+    plain = load_contract(write_contract(tmp_path, minimal_contract()))
+    assert plain.coverage_window_us is None
+    assert "coverage_window_us" not in plain.snapshot()
+
+    path = tmp_path / "window.yaml"
+    path.write_text(minimal_contract() + "coverage_window_us: 2500000\n", encoding="utf-8")
+    contract = load_contract(path)
+    assert contract.coverage_window_us == 2_500_000
+    assert contract.snapshot()["coverage_window_us"] == 2_500_000
+
+
+@pytest.mark.parametrize(
+    ("body", "code"),
+    [("coverage_window_us: 0\n", "E_CONTRACT_VALUE"), ("coverage_window_us: true\n", "E_CONTRACT_TYPE")],
+)
+def test_invalid_coverage_window_is_rejected(tmp_path: Path, body: str, code: str) -> None:
+    with pytest.raises(ContractError) as caught:
+        load_contract(write_contract(tmp_path, minimal_contract() + body))
+    assert caught.value.code == code
+    assert caught.value.field == "coverage_window_us"

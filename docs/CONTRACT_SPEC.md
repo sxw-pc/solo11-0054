@@ -19,6 +19,7 @@
 | `clock_skew` | str | 否 | `none` | `none` / `constant` / `linear`。 |
 | `resample` | mapping | 否 | `{default: linear}` | 默认策略和按 series id 的覆盖。 |
 | `gap_report_limit` | int | 否 | `20` | 报告中缺口和事件清单的最大展示条数。 |
+| `coverage_window_us` | int | 否 | `null` | 可选的主窗口上限（µs），必须 > 0；不填时主窗口取首个到末个 `ok` 格的自然跨度。 |
 
 顶层未列出的字段触发 `E_CONTRACT_UNKNOWN`。`version` 不是 1、布尔值冒充整数、
 空字符串、非法枚举均会失败。
@@ -163,6 +164,23 @@ resample:
 - `common_cells`：所有系列均为 `ok` 的网格格数。
 - `missing_any_cells`：至少一路非 `ok` 的格数。
 - `completion_rate = common_cells / total_cells`。
+- `intersection_start_us` / `intersection_end_us`：所有系列主窗口的
+  `[最大起点, 最小终点]`。交集为空时仍保留这两个原始端点，其余交集指标为 0。
+- `intersection_cells`：交集区间内的网格格数；交集为空时为 0。
+- `intersection_common_cells`：交集区间内所有系列均为 `ok` 的格数。
+- `intersection_completion_rate = intersection_common_cells / intersection_cells`；
+  交集为空时固定为 `0.0`，不使用空值。
+
+窗口分层（每路）：
+
+- `main_window_start_us` / `main_window_end_us`：首个和末个 `ok` 格的网格时刻。
+  首格为 `no_left` 或末格为 `no_right` 时它们不是 `ok`，因此天然不会成为端点。
+- `main_window_span_us = end_us - start_us`；无 `ok` 格时为 0。
+- `main_window_cells`：窗口内闭区间格数，`in_gap` 计入分母。
+- `main_window_value_cells`：窗口内 `ok` 格数。
+- `main_window_coverage = main_window_value_cells / main_window_cells`。
+- 若配置 `coverage_window_us`，窗口终点截断到首个 `ok` 格之后不超过该上限的
+  最后一个网格时刻；未配置时保持自然首末 `ok` 跨度。
 
 空网格或零分母返回 `0.0`，不抛除零错误。
 
@@ -185,6 +203,11 @@ resample:
 | `aligned` | 每个 series、每个 grid index 一行：`ts_us`、`value`、`marker`。 |
 | `metrics` | 契约快照、网格、对齐指标、每路质量、偏移指标。 |
 | `errors` | 有序审计事件，含 `W_*` 警告，`detail_json` 保存结构化细节。 |
+
+`metrics` 表同时保存 `series` scope 的主窗口六项指标和 `alignment` scope
+的交集五项指标。读取早于窗口层写入的旧台账时，`report` 会从 `aligned` 表的
+逐格标记重建这些指标；若 `aligned` 缺失或不完整，则退化为空窗口
+（端点为 `null`、计数和完成率为 0），不会因为新键缺失抛出 `E_LEDGER_CORRUPT`。
 
 ## 9. 退出码
 | 退出码 | 含义 |
