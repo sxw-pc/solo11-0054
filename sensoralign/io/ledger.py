@@ -8,18 +8,20 @@ Tables:
     errors   ordered audit events, including recoverable ``W_*`` findings.
 
 No table stores a wall-clock timestamp, so content tables remain reproducible.
+Sidecar JSON (``metrics.snapshot_json`` and ``errors.detail_json``) is
+serialized only through :func:`sensoralign.report.json_report.canonical_json_text`,
+the single canonical entry point.
 """
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
 from ..core.errors import LedgerError
-from ..report.json_report import report_sha256, run_id_for
+from ..report.json_report import canonical_json_text, report_sha256, run_id_for
 
 SCHEMA_TABLES = ("run", "series", "aligned", "metrics", "errors")
 SCHEMA = """
@@ -239,7 +241,7 @@ def _metric_rows(run_id: str, report: dict[str, Any]) -> Iterable[tuple[Any, ...
     alignment = report["alignment"]
     yield (run_id, "contract", "", "name", None, contract["name"])
     yield (run_id, "contract", "", "version", float(contract["version"]), None)
-    yield (run_id, "contract", "", "snapshot_json", None, json.dumps(contract["snapshot"], ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+    yield (run_id, "contract", "", "snapshot_json", None, canonical_json_text(contract["snapshot"]))
     for key, value in (
         ("origin_us", grid["origin_us"]),
         ("step_us", grid["step_us"]),
@@ -279,5 +281,5 @@ def _error_rows(run_id: str, report: dict[str, Any]) -> Iterable[tuple[Any, ...]
             event["line"],
             event["field"],
             event["message"],
-            json.dumps(event["detail"], ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+            canonical_json_text(event["detail"]),
         )

@@ -2,6 +2,8 @@
 
 The ledger stores enough typed metrics and ordered events for Markdown and JSON
 reporting to be replayed without access to the original contract or data files.
+The contract ``snapshot_json`` sidecar is verified against the run row's
+``contract_sha256`` (its canonical content hash) before any replay happens.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from .. import SCHEMA_VERSION
 from ..core.errors import LedgerError
 from ..core.resample import MARKER_ORDER
 from ..io.ledger import read_run_bundle
+from .json_report import canonical_json_sha256
 
 
 def load_report_from_db(db_path: Path, run_id: str | None = None) -> dict[str, Any]:
@@ -25,11 +28,19 @@ def rebuild_report(bundle: dict[str, Any]) -> dict[str, Any]:
     """Rebuild the report structure from a five-table run bundle.
 
     Raises:
-        LedgerError: ``E_LEDGER_CORRUPT`` when a required metric is absent.
+        LedgerError: ``E_LEDGER_CORRUPT`` when a required metric is absent or
+            the stored ``snapshot_json`` does not hash to the run row's
+            ``contract_sha256``.
     """
     metrics = {(row["scope"], row["scope_id"], row["metric_key"]): row for row in bundle["metrics"]}
-    snapshot = json.loads(_text(metrics, "contract", "", "snapshot_json"))
+    snapshot_text = _text(metrics, "contract", "", "snapshot_json")
     run = bundle["run"]
+    if canonical_json_sha256(snapshot_text) != run["contract_sha256"]:
+        raise LedgerError(
+            "E_LEDGER_CORRUPT",
+            "contract snapshot_json does not match run contract_sha256",
+        )
+    snapshot = json.loads(snapshot_text)
     series_reports = []
     for row in bundle["series"]:
         series_id = row["series_id"]

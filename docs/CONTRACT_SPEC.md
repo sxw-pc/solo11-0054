@@ -180,7 +180,7 @@ resample:
 
 | 表 | 内容 |
 | --- | --- |
-| `run` | `run_id`、`contract_sha256`、`result_sha256`，不含运行时间戳。 |
+| `run` | `run_id`、`contract_sha256`（契约快照规范 JSON 的 SHA-256）、`result_sha256`，不含运行时间戳。 |
 | `series` | 输入路径/格式/SHA-256、点数、去重/冲突、时钟估计、缺口统计。 |
 | `aligned` | 每个 series、每个 grid index 一行：`ts_us`、`value`、`marker`。 |
 | `metrics` | 契约快照、网格、对齐指标、每路质量、偏移指标。 |

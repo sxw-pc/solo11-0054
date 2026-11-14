@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import shutil
 import sqlite3
 from pathlib import Path
 
 import pytest
 
 from sensoralign.commands.run import execute_contract
+from sensoralign.core.errors import LedgerError
 from sensoralign.io.ledger import SCHEMA_TABLES, list_tables, read_run_bundle
 from sensoralign.report.from_ledger import load_report_from_db
 from sensoralign.report.json_report import canonical_json_bytes
@@ -90,3 +93,54 @@ def test_rewriting_same_run_is_idempotent(execution) -> None:
     bundle = read_run_bundle(execution.db_path, first_id)
     assert bundle["aligned_count"] == 300
     assert bundle["run"]["run_id"] == first_id
+
+
+def manual_compact(value) -> str:
+    """Reference serialization spelling out the canonical sidecar parameters."""
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def test_snapshot_json_matches_manual_dumps_and_run_hash(execution) -> None:
+    manual = manual_compact(execution.report["contract"]["snapshot"])
+    with sqlite3.connect(execution.db_path) as connection:
+        stored, = connection.execute(
+            "SELECT metric_text FROM metrics WHERE scope = 'contract' AND metric_key = 'snapshot_json'"
+        ).fetchone()
+        contract_sha, = connection.execute("SELECT contract_sha256 FROM run").fetchone()
+    assert stored == manual
+    assert hashlib.sha256(stored.encode("utf-8")).hexdigest() == contract_sha
+    assert execution.report["contract"]["sha256"] == contract_sha
+
+
+def test_error_detail_json_matches_manual_dumps(execution) -> None:
+    details = {event["seq"]: event["detail"] for event in execution.report["errors"]}
+    with sqlite3.connect(execution.db_path) as connection:
+        rows = connection.execute("SELECT seq, detail_json FROM errors ORDER BY seq").fetchall()
+    assert len(rows) == len(details)
+    for seq, detail_json in rows:
+        assert detail_json == manual_compact(details[seq])
+
+
+def test_tampered_snapshot_json_whitespace_fails_rebuild(execution, tmp_path) -> None:
+    db_copy = tmp_path / "tampered.db"
+    shutil.copy(execution.db_path, db_copy)
+    with sqlite3.connect(db_copy) as connection:
+        stored, = connection.execute(
+            "SELECT metric_text FROM metrics WHERE scope = 'contract' AND metric_key = 'snapshot_json'"
+        ).fetchone()
+        tampered = stored.replace(",", ", ", 1)
+        assert tampered != stored
+        connection.execute(
+            "UPDATE metrics SET metric_text = ? WHERE scope = 'contract' AND metric_key = 'snapshot_json'",
+            (tampered,),
+        )
+    with pytest.raises(LedgerError) as excinfo:
+        load_report_from_db(db_copy)
+    assert excinfo.value.code == "E_LEDGER_CORRUPT"
+
+
+def test_untampered_copy_still_rebuilds(execution, tmp_path) -> None:
+    db_copy = tmp_path / "pristine.db"
+    shutil.copy(execution.db_path, db_copy)
+    rebuilt = load_report_from_db(db_copy)
+    assert canonical_json_bytes(rebuilt) == execution.json_path.read_bytes()

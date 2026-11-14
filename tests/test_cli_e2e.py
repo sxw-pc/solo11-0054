@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import sqlite3
 from pathlib import Path
 
 from sensoralign.cli import main
@@ -97,6 +98,27 @@ def test_missing_ledger_exit_code_is_one(tmp_path: Path, capsys) -> None:
     code = main(["report", "--db", str(tmp_path / "missing.db"), "--format", "markdown"])
     assert code == 1
     assert "E_LEDGER_READ" in capsys.readouterr().err
+
+def test_report_rejects_tampered_snapshot_json(tmp_path: Path, capsys) -> None:
+    out_dir = tmp_path / "tamper-out"
+    assert main(["run", "--contract", str(ROOT / "fixtures" / "contracts" / "basic.yaml"), "--out-dir", str(out_dir)]) == 0
+    capsys.readouterr()
+    db_path = out_dir / "align.db"
+    with sqlite3.connect(db_path) as connection:
+        stored, = connection.execute(
+            "SELECT metric_text FROM metrics WHERE scope = 'contract' AND metric_key = 'snapshot_json'"
+        ).fetchone()
+        tampered = stored.replace(",", ", ", 1)
+        assert tampered != stored
+        connection.execute(
+            "UPDATE metrics SET metric_text = ? WHERE scope = 'contract' AND metric_key = 'snapshot_json'",
+            (tampered,),
+        )
+    code = main(["report", "--db", str(db_path), "--format", "json"])
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "E_LEDGER_CORRUPT" in captured.err
+    assert captured.out == ""
 
 def test_no_network_modules_are_imported() -> None:
     forbidden = {"socket", "urllib", "http", "requests", "ftplib", "smtplib", "telnetlib", "aiohttp", "websockets"}

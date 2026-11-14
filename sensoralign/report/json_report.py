@@ -3,6 +3,10 @@
 The object contains no absolute paths, wall-clock time, random values or
 host-specific fields. Two runs over identical inputs and contracts therefore
 produce byte-identical JSON after the canonical serializer is applied.
+
+This module is the single definition of canonical JSON serialization: reports
+use :func:`canonical_json_bytes`, while ledger sidecar payloads (contract
+``snapshot_json`` and event ``detail_json``) use :func:`canonical_json_text`.
 """
 
 from __future__ import annotations
@@ -64,14 +68,15 @@ def build_report(result: AlignResult) -> dict[str, Any]:
             }
         )
     alignment = result.alignment
+    snapshot = result.contract.snapshot()
     return {
         "schema_version": SCHEMA_VERSION,
         "generator": "sensoralign",
         "contract": {
             "name": result.contract.name,
             "version": result.contract.version,
-            "sha256": result.contract.source_sha256,
-            "snapshot": result.contract.snapshot(),
+            "sha256": snapshot_sha256(snapshot),
+            "snapshot": snapshot,
         },
         "grid": {
             "mode": result.grid.mode,
@@ -100,6 +105,21 @@ def canonical_json_bytes(report: dict[str, Any]) -> bytes:
     """Serialize a report deterministically as UTF-8 JSON with a final newline."""
     text = json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False)
     return (text + "\n").encode("utf-8")
+
+
+def canonical_json_text(value: Any) -> str:
+    """Serialize a ledger sidecar payload as deterministic compact JSON."""
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def canonical_json_sha256(text: str) -> str:
+    """Return the SHA-256 digest of canonical JSON text encoded as UTF-8."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def snapshot_sha256(snapshot: dict[str, Any]) -> str:
+    """Return the content hash of a contract snapshot in canonical form."""
+    return canonical_json_sha256(canonical_json_text(snapshot))
 
 
 def report_sha256(report: dict[str, Any]) -> str:
